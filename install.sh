@@ -100,13 +100,6 @@ EOF
     info "NetworkManager : $WIFI_IFACE marqué unmanaged"
 fi
 
-# IP statique sur wlan0
-cat > /etc/network/interfaces.d/bazaar-wlan0 <<EOF
-auto ${WIFI_IFACE}
-iface ${WIFI_IFACE} inet static
-    address ${SERVER_IP}
-    netmask 255.255.255.0
-EOF
 
 # hostapd
 cat > /etc/hostapd/hostapd.conf <<EOF
