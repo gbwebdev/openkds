@@ -1,0 +1,19 @@
+# Ce fichier est une référence — install.sh l'écrit directement dans /etc/systemd/system/
+[Unit]
+Description=Bazaar Restaurant System
+After=network.target bazaar-hotspot.service
+Wants=bazaar-hotspot.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=bazaar
+WorkingDirectory=/opt/bazaar
+ExecStart=/opt/bazaar/venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

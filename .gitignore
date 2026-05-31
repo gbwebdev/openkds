@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+
+# Base de données (générée au runtime)
+bazaar.db
+
+# Config locale (peut contenir vendor_id/product_id sensibles)
+# Décommenter si nécessaire :
+# config.json
+
+# OS
+.DS_Store
+Thumbs.db
