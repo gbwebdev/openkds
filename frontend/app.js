@@ -215,8 +215,11 @@ function renderGrillWidget() {
   container.innerHTML = meats.map(m => {
     const g = grillState.gauges?.[m] ?? 0;
     const d = grillState.demand?.[m] ?? 0;
+    const segs = [1,2,3,4].map(i =>
+      `<span class="mini-seg ${i <= g ? 'on-' + g : ''}"></span>`
+    ).join('');
     return `<div class="grill-row">
-      <span class="grill-dot g${g}"></span>
+      <span class="mini-gauge">${segs}</span>
       <span>${shortNames[m]}: <strong>${d}</strong></span>
     </div>`;
   }).join('');

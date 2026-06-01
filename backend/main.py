@@ -212,13 +212,7 @@ async def create_order(order_data: OrderCreate):
     p2_status = "ok" if r2["ok"] else (r2["error"] or "error")
 
     grill_state = get_grill_state(config)
-    await broadcast({
-        "type": "order_created",
-        "grill": {
-            "demand": grill_state["demand"],
-            "gauges": grill_state["gauges"],
-        }
-    })
+    await broadcast({"type": "order_created", "grill": grill_state})
 
     if not r1["ok"] or not r2["ok"]:
         if not r1["ok"]:

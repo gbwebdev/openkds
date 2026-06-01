@@ -220,15 +220,22 @@ html, body {
   font-size: 0.9rem;
 }
 
-.grill-dot {
-  width: 10px; height: 10px;
-  border-radius: 50%;
+.mini-gauge {
+  display: flex;
+  gap: 2px;
+  align-items: center;
   flex-shrink: 0;
 }
-.grill-dot.g0 { background: var(--grey); }
-.grill-dot.g1 { background: var(--yellow); box-shadow: 0 0 5px var(--yellow); }
-.grill-dot.g2 { background: var(--orange); box-shadow: 0 0 5px var(--orange); }
-.grill-dot.g3, .grill-dot.g4 { background: var(--red); box-shadow: 0 0 5px var(--red); }
+.mini-seg {
+  width: 7px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background .2s;
+}
+.mini-seg.on-1 { background: var(--yellow); box-shadow: 0 0 4px var(--yellow); }
+.mini-seg.on-2 { background: var(--orange); box-shadow: 0 0 4px var(--orange); }
+.mini-seg.on-3, .mini-seg.on-4 { background: var(--red); box-shadow: 0 0 4px var(--red); }
 
 /* ── Screen header ───────────────────────────────────────────────────────── */
 .screen-header {
