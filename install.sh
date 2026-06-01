@@ -191,8 +191,15 @@ After=network.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/bash -c 'ip link set ${WIFI_IFACE} up && ip addr flush dev ${WIFI_IFACE} && ip addr add ${SERVER_IP}/24 dev ${WIFI_IFACE}'
-ExecStop=/bin/bash -c 'ip addr flush dev ${WIFI_IFACE}'
+ExecStart=/bin/bash -c '\
+    ip link set ${WIFI_IFACE} up && \
+    ip addr flush dev ${WIFI_IFACE} && \
+    ip addr add ${SERVER_IP}/24 dev ${WIFI_IFACE} && \
+    iptables -t nat -C PREROUTING -i ${WIFI_IFACE} -p tcp --dport 80 -j REDIRECT --to-port 8000 2>/dev/null || \
+    iptables -t nat -A PREROUTING -i ${WIFI_IFACE} -p tcp --dport 80 -j REDIRECT --to-port 8000'
+ExecStop=/bin/bash -c '\
+    ip addr flush dev ${WIFI_IFACE} ; \
+    iptables -t nat -D PREROUTING -i ${WIFI_IFACE} -p tcp --dport 80 -j REDIRECT --to-port 8000 2>/dev/null || true'
 
 [Install]
 WantedBy=multi-user.target

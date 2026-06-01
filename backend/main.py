@@ -83,6 +83,35 @@ def _get_printers(config: dict):
     return (p1, e1), (p2, e2)
 
 
+# ── Captive portal detection (Android / iOS / Windows) ───────────────────────
+# dnsmasq resolves all DNS to 192.168.50.1; iptables redirects port 80 → 8000.
+# Returning the expected responses prevents Android from falling back to mobile
+# data and iOS from blocking the connection behind a captive portal prompt.
+
+@app.get("/generate_204")
+async def generate_204():
+    from fastapi.responses import Response
+    return Response(status_code=204)
+
+@app.get("/hotspot-detect.html")
+async def hotspot_detect():
+    return HTMLResponse("<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>")
+
+@app.get("/success.html")
+async def success_html():
+    return HTMLResponse("<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>")
+
+@app.get("/connecttest.txt")
+async def connecttest():
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse("Microsoft Connect Test")
+
+@app.get("/ncsi.txt")
+async def ncsi():
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse("Microsoft NCSI")
+
+
 # ── Static SPA ──────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
