@@ -55,11 +55,39 @@ FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 connected_clients: list[WebSocket] = []
 
+# Printer connection cache — keyed by device string.
+# Avoids re-opening the libusb interface on every request, which causes
+# "resource busy" errors on USB bulk printers.
+_printer_cache: dict[str, object] = {}
+
+
+def _get_cached_printer(device: str):
+    """Return a cached printer, or open a new one. Invalidate on error."""
+    if not device:
+        return None, "Périphérique non configuré"
+    if device in _printer_cache:
+        return _printer_cache[device], None
+    p, err = try_get_printer(device)
+    if p is not None:
+        _printer_cache[device] = p
+    return p, err
+
+
+def _invalidate_printer(device: str):
+    """Remove a broken printer from cache so the next call reconnects."""
+    _printer_cache.pop(device, None)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     yield
+    # Release all cached printer connections on shutdown
+    for p in _printer_cache.values():
+        try:
+            p.close()
+        except Exception:
+            pass
 
 
 app = FastAPI(title="Bazaar KDS", lifespan=lifespan)
@@ -78,8 +106,8 @@ async def broadcast(message: dict):
 
 
 def _get_printers(config: dict):
-    p1, e1 = try_get_printer(config.get("printer1_device", ""))
-    p2, e2 = try_get_printer(config.get("printer2_device", ""))
+    p1, e1 = _get_cached_printer(config.get("printer1_device", ""))
+    p2, e2 = _get_cached_printer(config.get("printer2_device", ""))
     return (p1, e1), (p2, e2)
 
 
@@ -174,6 +202,12 @@ async def create_order(order_data: OrderCreate):
 
     r2 = print_with_status(p2, print_p2)
 
+    # Invalidate cache on failure so next attempt reconnects
+    if not r1["ok"]:
+        _invalidate_printer(config.get("printer1_device", ""))
+    if not r2["ok"]:
+        _invalidate_printer(config.get("printer2_device", ""))
+
     p1_status = "ok" if r1["ok"] else (r1["error"] or "error")
     p2_status = "ok" if r2["ok"] else (r2["error"] or "error")
 
@@ -227,6 +261,11 @@ async def reprint_order(order_id: int):
             print_billigs_ticket(p, order)
 
     r2 = print_with_status(p2, print_p2)
+
+    if not r1["ok"]:
+        _invalidate_printer(config.get("printer1_device", ""))
+    if not r2["ok"]:
+        _invalidate_printer(config.get("printer2_device", ""))
 
     return {
         "printer1_status": "ok" if r1["ok"] else (r1["error"] or "error"),
