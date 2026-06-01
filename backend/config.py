@@ -20,6 +20,7 @@ DEFAULT_CONFIG = {
         "galette_saucisse":"#3498db",
         "barquette_frite": "#9b59b6"
     },
+    "org_name": "",
     "event_name": "Kermesse de l'École 2026"
 }
 

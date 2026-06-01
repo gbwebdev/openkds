@@ -17,8 +17,12 @@ ASSEMBLY_ITEMS = {
 
 
 def print_client_ticket(printer, order: dict, config: dict):
-    event_name = config.get("event_name", "Kermesse")
+    org_name = config.get("org_name", "")
+    event_name = config.get("event_name", "")
 
+    if org_name:
+        printer.set(align='center', bold=False, height=1, width=1)
+        printer.text(org_name + "\n")
     printer.set(align='center', bold=True, height=2, width=2)
     printer.text(event_name + "\n")
     printer.set(align='center', bold=False, height=1, width=1)

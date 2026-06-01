@@ -62,4 +62,5 @@ class ConfigUpdate(BaseModel):
     printer1_device: Optional[str] = None
     printer2_device: Optional[str] = None
     button_colors: Optional[dict] = None
+    org_name: Optional[str] = None
     event_name: Optional[str] = None

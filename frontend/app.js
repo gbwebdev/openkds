@@ -21,7 +21,8 @@ async function loadConfig() {
   try {
     const res = await fetch('/api/config');
     config = await res.json();
-    document.getElementById('event-name').textContent = config.event_name || '';
+    const parts = [config.org_name, config.event_name].filter(Boolean);
+    document.getElementById('event-name').textContent = parts.join(' — ');
   } catch {}
 }
 
@@ -437,6 +438,10 @@ async function loadSettings() {
     document.getElementById('input-grill-window').value = config.grill_window_minutes;
     document.getElementById('input-grill-segment').value = config.grill_segment_size;
 
+    // Identity
+    document.getElementById('input-org-name').value = config.org_name || '';
+    document.getElementById('input-event-name').value = config.event_name || '';
+
     // Next order number
     document.getElementById('input-next-order').value = config.next_order_number;
 
@@ -469,6 +474,15 @@ function renderPrinterBadge(elemId, status) {
     el.textContent = '✗ Déconnectée';
     el.className = 'printer-badge err';
   }
+}
+
+async function saveIdentity() {
+  const org = document.getElementById('input-org-name').value.trim();
+  const evt = document.getElementById('input-event-name').value.trim();
+  await saveConfigFields({ org_name: org, event_name: evt });
+  const parts = [org, evt].filter(Boolean);
+  document.getElementById('event-name').textContent = parts.join(' — ');
+  showToast('Identité enregistrée', 'ok');
 }
 
 async function savePrinterDevices() {
