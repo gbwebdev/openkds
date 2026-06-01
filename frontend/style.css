@@ -230,7 +230,7 @@ html, body {
   width: 7px;
   height: 16px;
   border-radius: 2px;
-  background: var(--border);
+  background: rgba(255,255,255,0.2);
   transition: background .2s;
 }
 .mini-seg.on-1 { background: var(--yellow); box-shadow: 0 0 4px var(--yellow); }

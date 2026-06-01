@@ -83,14 +83,24 @@ def print_billigs_ticket(printer, order: dict):
     if qty == 0:
         return
 
-    # Reverse mode on for the entire ticket — black background, white text
+    # Header: full reverse block (black bg, white text)
     printer.text("\x1d\x42\x01")
-
+    printer.set(align='center', bold=True, height=1, width=1)
+    printer.text(" " * 48 + "\n")
     printer.set(align='center', bold=True, height=2, width=2)
-    printer.text("\n  BILLIGS  \n")
+    printer.text("      BILLIGS      \n")
+    printer.set(align='center', bold=True, height=1, width=1)
+    printer.text(" " * 48 + "\n")
+    printer.text("\x1d\x42\x00")
 
+    # Top border bar (reverse)
+    printer.text("\x1d\x42\x01")
+    printer.text(" " * 48 + "\n")
+    printer.text("\x1d\x42\x00")
+
+    # Body: normal mode
     printer.set(align='center', bold=True, height=3, width=2)
-    printer.text(f"  #{order['number']:03d}  \n")
+    printer.text(f"#{order['number']:03d}\n")
 
     printer.set(align='left', bold=True, height=1, width=1)
     printer.text("\n")
@@ -98,8 +108,11 @@ def print_billigs_ticket(printer, order: dict):
         printer.text("  [ ] Galette-saucisse\n")
     printer.text("\n")
 
-    # Reverse mode off before cut
+    # Bottom border bar (reverse)
+    printer.text("\x1d\x42\x01")
+    printer.text(" " * 48 + "\n")
     printer.text("\x1d\x42\x00")
+
     printer.cut()
 
 
