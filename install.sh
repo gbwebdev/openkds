@@ -122,10 +122,15 @@ info "Virtualenv prêt"
 # ── 6. Règles udev pour les imprimantes USB ───────────────────────────────────
 step "Règles udev imprimantes USB"
 
+# Blacklister usblp : le module kernel prend le contrôle des imprimantes USB
+# bulk et empêche libusb (python-escpos) d'y accéder ("resource busy").
+echo "blacklist usblp" > /etc/modprobe.d/bazaar-printers.conf
+modprobe -r usblp 2>/dev/null || true
+
 cat > /etc/udev/rules.d/99-bazaar-printers.rules <<'EOF'
 # Imprimantes thermiques CDC ACM (port série virtuel USB) — accès pour bazaar
 SUBSYSTEM=="tty", KERNEL=="ttyACM*", GROUP="dialout", MODE="0660"
-# Fallback USB bulk (Epson TM series)
+# Epson TM series USB bulk — libusb accès direct (usblp blacklisté)
 SUBSYSTEM=="usb", ATTRS{idVendor}=="04b8", GROUP="dialout", MODE="0660"
 EOF
 
@@ -133,7 +138,7 @@ usermod -aG dialout "$SERVICE_USER" 2>/dev/null || true
 usermod -aG plugdev "$SERVICE_USER" 2>/dev/null || true
 udevadm control --reload-rules
 udevadm trigger
-info "Règles udev installées"
+info "Règles udev installées (usblp blacklisté)"
 
 # ── 7. Hotspot WiFi ───────────────────────────────────────────────────────────
 if [ "$SKIP_HOTSPOT" -eq 0 ]; then
