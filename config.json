@@ -2,10 +2,8 @@
   "grill_window_minutes": 20,
   "grill_segment_size": 6,
   "next_order_number": 1,
-  "printer1_vendor_id": "04b8",
-  "printer1_product_id": "",
-  "printer2_vendor_id": "",
-  "printer2_product_id": "",
+  "printer1_device": "/dev/ttyACM0",
+  "printer2_device": "/dev/ttyACM1",
   "button_colors": {
     "adulte_merguez":  "#e74c3c",
     "adulte_chipo":    "#e67e22",

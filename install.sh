@@ -123,11 +123,13 @@ info "Virtualenv prêt"
 step "Règles udev imprimantes USB"
 
 cat > /etc/udev/rules.d/99-bazaar-printers.rules <<'EOF'
-# Imprimantes thermiques — accès pour l'utilisateur bazaar
-SUBSYSTEM=="usb", ATTRS{idVendor}=="04b8", GROUP="bazaar", MODE="0660"
-SUBSYSTEM=="usb", ENV{ID_USB_INTERFACES}=="*:07*", GROUP="bazaar", MODE="0660"
+# Imprimantes thermiques CDC ACM (port série virtuel USB) — accès pour bazaar
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", GROUP="dialout", MODE="0660"
+# Fallback USB bulk (Epson TM series)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="04b8", GROUP="dialout", MODE="0660"
 EOF
 
+usermod -aG dialout "$SERVICE_USER" 2>/dev/null || true
 usermod -aG plugdev "$SERVICE_USER" 2>/dev/null || true
 udevadm control --reload-rules
 udevadm trigger

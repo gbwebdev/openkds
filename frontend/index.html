@@ -104,18 +104,29 @@
     <!-- Printers -->
     <section class="settings-section">
       <h2>Imprimantes</h2>
-      <div id="printer-status" class="printer-status-grid">
+      <div class="printer-status-grid">
         <div class="printer-card">
           <strong>Imprimante 1</strong> (Ticket client)
           <span id="p1-status" class="printer-badge">—</span>
           <button onclick="testPrinter(1)" class="btn-test">Test</button>
         </div>
-        <div class="printer-card">
+        <div class="printer-device-row">
+          <label>Périphérique :
+            <input type="text" id="input-printer1-device" class="input-field" style="width:160px" placeholder="/dev/ttyACM0">
+          </label>
+        </div>
+        <div class="printer-card" style="margin-top:12px">
           <strong>Imprimante 2</strong> (Assemblage)
           <span id="p2-status" class="printer-badge">—</span>
           <button onclick="testPrinter(2)" class="btn-test">Test</button>
         </div>
+        <div class="printer-device-row">
+          <label>Périphérique :
+            <input type="text" id="input-printer2-device" class="input-field" style="width:160px" placeholder="/dev/ttyACM1">
+          </label>
+        </div>
       </div>
+      <button onclick="savePrinterDevices()" class="btn-save" style="margin-top:10px">Enregistrer</button>
     </section>
 
     <!-- Reprise -->

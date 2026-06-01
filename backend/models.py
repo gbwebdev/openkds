@@ -59,9 +59,7 @@ class ConfigUpdate(BaseModel):
     grill_window_minutes: Optional[int] = None
     grill_segment_size: Optional[int] = None
     next_order_number: Optional[int] = None
-    printer1_vendor_id: Optional[str] = None
-    printer1_product_id: Optional[str] = None
-    printer2_vendor_id: Optional[str] = None
-    printer2_product_id: Optional[str] = None
+    printer1_device: Optional[str] = None
+    printer2_device: Optional[str] = None
     button_colors: Optional[dict] = None
     event_name: Optional[str] = None

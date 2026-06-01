@@ -78,8 +78,8 @@ async def broadcast(message: dict):
 
 
 def _get_printers(config: dict):
-    p1, e1 = try_get_printer(config.get("printer1_vendor_id", ""), config.get("printer1_product_id", ""))
-    p2, e2 = try_get_printer(config.get("printer2_vendor_id", ""), config.get("printer2_product_id", ""))
+    p1, e1 = try_get_printer(config.get("printer1_device", ""))
+    p2, e2 = try_get_printer(config.get("printer2_device", ""))
     return (p1, e1), (p2, e2)
 
 

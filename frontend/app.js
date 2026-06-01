@@ -424,9 +424,11 @@ async function loadSettings() {
     document.getElementById('warning-service').style.display =
       stats.total_orders > 0 ? 'block' : 'none';
 
-    // Printer badges
+    // Printer badges + device paths
     renderPrinterBadge('p1-status', printerStatus.printer1);
     renderPrinterBadge('p2-status', printerStatus.printer2);
+    document.getElementById('input-printer1-device').value = config.printer1_device || '';
+    document.getElementById('input-printer2-device').value = config.printer2_device || '';
 
     // Grill params
     document.getElementById('input-grill-window').value = config.grill_window_minutes;
@@ -464,6 +466,14 @@ function renderPrinterBadge(elemId, status) {
     el.textContent = '✗ Déconnectée';
     el.className = 'printer-badge err';
   }
+}
+
+async function savePrinterDevices() {
+  const d1 = document.getElementById('input-printer1-device').value.trim();
+  const d2 = document.getElementById('input-printer2-device').value.trim();
+  await saveConfigFields({ printer1_device: d1, printer2_device: d2 });
+  showToast('Périphériques enregistrés', 'ok');
+  await loadSettings();
 }
 
 async function saveNextOrder() {
