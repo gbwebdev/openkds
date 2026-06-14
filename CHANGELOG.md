@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/gbwebdev/openkds/compare/v0.2.2...v0.3.0) (2026-06-14)
+
+
+### Features
+
+* **printers:** named printers + template docs + CLAUDE.md ([f0a2582](https://github.com/gbwebdev/openkds/commit/f0a2582c0de5e9b92ec4fe790b32d7277b6a2078))
+
 ## [0.2.2](https://github.com/gbwebdev/openkds/compare/v0.2.1...v0.2.2) (2026-06-14)
 
 
