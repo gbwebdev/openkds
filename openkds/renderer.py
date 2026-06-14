@@ -47,15 +47,31 @@ def _get_env() -> Environment:
     return _env
 
 
+_ALIGN = {"left": b"\x1b\x61\x00", "center": b"\x1b\x61\x01", "right": b"\x1b\x61\x02"}
+
+
+def _fmt(printer, align: str, bold: bool, height: int, width: int) -> None:
+    """Send formatting as raw ESC/POS bytes.
+
+    Bypasses printer.set() which caps height/width at 2 in escpos v3,
+    causing SetVariableError for [huge] (height=3) and silently aborting
+    the print function before the cut command is ever reached.
+    """
+    printer._raw(_ALIGN.get(align, _ALIGN["left"]))           # ESC a n
+    printer._raw(bytes([0x1b, 0x45, 1 if bold else 0]))       # ESC E n
+    size_n = (max(1, height) - 1) | ((max(1, width) - 1) << 4)
+    printer._raw(bytes([0x1d, 0x21, size_n]))                 # GS ! n
+
+
+_FMT_NORMAL = b"\x1b\x61\x00\x1b\x45\x00\x1d\x21\x00"  # left, no bold, 1×1
+
+
 def _process(printer, rendered: str) -> None:
     """Interpret rendered template text: directives + plain text lines."""
     align = "left"
     bold = False
     height = 1
     width = 1
-
-    def apply():
-        printer.set(align=align, bold=bold, height=height, width=width)
 
     for raw_line in rendered.split("\n"):
         line = raw_line
@@ -78,7 +94,7 @@ def _process(printer, rendered: str) -> None:
             elif d == "right":
                 align = "right"
             elif d == "normal":
-                height, width, bold = 1, 1, False
+                align, bold, height, width = "left", False, 1, 1
             elif d == "big":
                 height, width = 2, 2
             elif d == "huge":
@@ -92,10 +108,10 @@ def _process(printer, rendered: str) -> None:
             elif d == "/reverse":
                 printer._raw(b"\x1d\x42\x00")
             elif d == "sep":
-                printer.set(align="left", bold=False, height=1, width=1)
+                printer._raw(_FMT_NORMAL)
                 printer.text("=" * 32 + "\n")
             elif d == "sep-":
-                printer.set(align="left", bold=False, height=1, width=1)
+                printer._raw(_FMT_NORMAL)
                 printer.text("-" * 32 + "\n")
             elif d == "cut":
                 _cut(printer)
@@ -106,16 +122,21 @@ def _process(printer, rendered: str) -> None:
             return
 
         if line:
-            apply()
+            _fmt(printer, align, bold, height, width)
             printer.text(line + "\n")
 
 
 def _cut(printer) -> None:
-    """Feed paper and cut, then flush any write buffer."""
-    printer.text("\n" * 4)
-    # GS V A 0 = feed + full cut (Epson TM and most ESC/POS compatible printers).
-    # Sent as raw bytes to bypass any escpos library version differences.
-    printer._raw(b"\x1d\x56\x41\x00")
+    """Feed paper, cut, then flush any write buffer.
+
+    Uses printer.cut() (which sends GS V 0 = full cut without feed) — the
+    same call that worked in the pre-refactor codebase. The variant GS V A 0
+    (\\x1d\\x56\\x41\\x00) is not supported by all printers and silently
+    no-ops on some firmware revisions.
+    """
+    # Feed enough paper so the text isn't cut through
+    printer._raw(b"\n\n\n\n")
+    printer.cut()
     # Flush Python's write buffer if the printer uses a file descriptor
     # (EscposFile / CDC ACM). Without this, the last bytes can stay in the
     # BufferedWriter buffer indefinitely on a cached long-lived connection.
