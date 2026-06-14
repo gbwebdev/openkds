@@ -1,16 +1,24 @@
-{{ CENTER }}{{ NORMAL }}{{ BOLD_OFF -}}
-{% if config.org_name %}
-{{ config.org_name }}
-{% endif -%}
-{{ CENTER }}{{ BOLD_ON }}{{ SIZE_2HW }}{{ config.event_name or '' }}
-{{ NORMAL }}{{ BOLD_OFF }}{{ "=" * 32 }}
-{{ CENTER }}{{ BOLD_ON }}{{ SIZE_3H2W }}COMMANDE #{{ "%03d" % order.number }}
-{{ NORMAL }}{{ BOLD_OFF }}{{ "=" * 32 }}
-{{ LEFT }}
-{% for item in workshop_items -%}
-  {{ item.qty }}x {{ item.label | replace('\n', ' ') }}
-{% endfor -%}
-{{ "=" * 32 }}
-{{ CENTER }}Presentez ce ticket
+{#
+  OpenKDS — ticket client (reçu remis au client)
+  Charset : cp437 (accents français supportés)
+  Largeur  : 48 caractères max en taille normale, 24 en [big]/[huge]
+  Directives disponibles :
+    [left] [center] [right]
+    [normal] [big] [huge]
+    [bold] [/bold]
+    [sep]   => séparateur ========
+    [sep-]  => séparateur --------
+    [cut]   => coupe le papier (obligatoire en fin de template)
+#}
+[center]
+{% if config.org_name %}{{ config.org_name }}
+{% endif %}[big]{{ config.event_name or 'OpenKDS' }}
+[sep]
+[huge]COMMANDE #{{ "%03d" % order.number }}
+[sep]
+[left][normal]
+{% for item in workshop_items %}  {{ item.qty }}x {{ item.label | replace('\n', ' ') }}
+{% endfor %}[sep]
+[center]Presentez ce ticket
 a la remise de commande
-{{ CUT }}
+[cut]

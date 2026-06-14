@@ -1,31 +1,23 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, ChoiceLoader
 
-# ESC/POS command constants available in all templates.
-# Values are Python strings that encode to the correct bytes via latin-1.
-ESCPOS = {
-    # Reverse video
-    "REVERSE_ON":  "\x1d\x42\x01",
-    "REVERSE_OFF": "\x1d\x42\x00",
-    # Paper cut — GS V 65 0 = feed + full cut (EPSON TM compatible)
-    "CUT":         "\n\n\n\n\x1d\x56\x41\x00",
-    # Alignment
-    "CENTER":      "\x1b\x61\x01",
-    "LEFT":        "\x1b\x61\x00",
-    "RIGHT":       "\x1b\x61\x02",
-    # Bold
-    "BOLD_ON":     "\x1b\x45\x01",
-    "BOLD_OFF":    "\x1b\x45\x00",
-    # Text size: GS ! n  (bits 0-2 = height-1, bits 4-6 = width-1)
-    "NORMAL":      "\x1d\x21\x00",   # 1×1
-    "SIZE_2H":     "\x1d\x21\x01",   # 2× height
-    "SIZE_2W":     "\x1d\x21\x10",   # 2× width
-    "SIZE_2HW":    "\x1d\x21\x11",   # 2× height + 2× width
-    "SIZE_3H2W":   "\x1d\x21\x12",   # 3× height + 2× width
-}
+
+# Directive syntax: [name] at the start of a line (one or more, in sequence).
+# State directives  — change formatting for subsequent text lines:
+#   [left]  [center]  [right]
+#   [normal]  [big]  [huge]       (normal=1×1, big=2×2, huge=3×2)
+#   [bold]  [/bold]
+#   [reverse]  [/reverse]         (white-on-black via raw ESC/POS)
+# Immediate directives — produce output now and don't linger:
+#   [sep]   print === separator (32 chars, normal, left)
+#   [sep-]  print --- separator (32 chars, normal, left)
+#   [cut]   feed + cut (terminates processing)
+
+_DIRECTIVE_RE = re.compile(r'^\[([a-zA-Z/\-]+)\]')
 
 
 def _build_env() -> Environment:
@@ -36,15 +28,13 @@ def _build_env() -> Environment:
         loaders.append(FileSystemLoader(str(user_tpl)))
     pkg_tpl = Path(__file__).parent / "default_templates"
     loaders.append(FileSystemLoader(str(pkg_tpl)))
-    env = Environment(
+    return Environment(
         loader=ChoiceLoader(loaders),
         autoescape=False,
         trim_blocks=True,
         lstrip_blocks=True,
         keep_trailing_newline=False,
     )
-    env.globals.update(ESCPOS)
-    return env
 
 
 _env: Environment | None = None
@@ -57,22 +47,81 @@ def _get_env() -> Environment:
     return _env
 
 
+def _process(printer, rendered: str) -> None:
+    """Interpret rendered template text: directives + plain text lines."""
+    align = "left"
+    bold = False
+    height = 1
+    width = 1
+
+    def apply():
+        printer.set(align=align, bold=bold, height=height, width=width)
+
+    for raw_line in rendered.split("\n"):
+        line = raw_line
+
+        # Collect all leading directives on this line
+        directives: list[str] = []
+        while True:
+            m = _DIRECTIVE_RE.match(line)
+            if not m:
+                break
+            directives.append(m.group(1))
+            line = line[m.end():]
+
+        stop = False
+        for d in directives:
+            if d == "left":
+                align = "left"
+            elif d == "center":
+                align = "center"
+            elif d == "right":
+                align = "right"
+            elif d == "normal":
+                height, width, bold = 1, 1, False
+            elif d == "big":
+                height, width = 2, 2
+            elif d == "huge":
+                height, width = 3, 2
+            elif d == "bold":
+                bold = True
+            elif d == "/bold":
+                bold = False
+            elif d == "reverse":
+                printer._raw(b"\x1d\x42\x01")
+            elif d == "/reverse":
+                printer._raw(b"\x1d\x42\x00")
+            elif d == "sep":
+                printer.set(align="left", bold=False, height=1, width=1)
+                printer.text("=" * 32 + "\n")
+            elif d == "sep-":
+                printer.set(align="left", bold=False, height=1, width=1)
+                printer.text("-" * 32 + "\n")
+            elif d == "cut":
+                printer.cut()
+                stop = True
+                break
+
+        if stop:
+            return
+
+        if line:
+            apply()
+            printer.text(line + "\n")
+
+
 def render_ticket(printer, template_name: str, context: dict) -> None:
-    """Render a Jinja2 template and send raw bytes to the printer."""
     template = _get_env().get_template(template_name)
     rendered = template.render(**context)
-    printer._raw(rendered.encode("cp437", errors="replace"))
+    _process(printer, rendered)
 
 
 def print_test_ticket(printer, printer_num: int) -> None:
-    rendered = (
-        f"{ESCPOS['CENTER']}{ESCPOS['BOLD_ON']}{ESCPOS['SIZE_2HW']}"
-        f"TEST IMPRESSION\n"
-        f"{ESCPOS['NORMAL']}{ESCPOS['BOLD_OFF']}"
-        f"{'=' * 32}\n"
-        f"{ESCPOS['CENTER']}Imprimante {printer_num}\n"
-        f"Fonctionnement OK\n"
-        f"{'=' * 32}"
-        f"{ESCPOS['CUT']}"
-    )
-    printer._raw(rendered.encode("cp437", errors="replace"))
+    _process(printer, "\n".join([
+        "[center][big]TEST IMPRESSION",
+        "[sep]",
+        f"[center][normal]Imprimante {printer_num}",
+        "Fonctionnement OK",
+        "[sep]",
+        "[cut]",
+    ]))
