@@ -98,7 +98,7 @@ def _process(printer, rendered: str) -> None:
                 printer.set(align="left", bold=False, height=1, width=1)
                 printer.text("-" * 32 + "\n")
             elif d == "cut":
-                printer.cut()
+                _cut(printer)
                 stop = True
                 break
 
@@ -108,6 +108,23 @@ def _process(printer, rendered: str) -> None:
         if line:
             apply()
             printer.text(line + "\n")
+
+
+def _cut(printer) -> None:
+    """Feed paper and cut, then flush any write buffer."""
+    printer.text("\n" * 4)
+    # GS V A 0 = feed + full cut (Epson TM and most ESC/POS compatible printers).
+    # Sent as raw bytes to bypass any escpos library version differences.
+    printer._raw(b"\x1d\x56\x41\x00")
+    # Flush Python's write buffer if the printer uses a file descriptor
+    # (EscposFile / CDC ACM). Without this, the last bytes can stay in the
+    # BufferedWriter buffer indefinitely on a cached long-lived connection.
+    try:
+        device = getattr(printer, "device", None)
+        if device and hasattr(device, "flush"):
+            device.flush()
+    except Exception:
+        pass
 
 
 def render_ticket(printer, template_name: str, context: dict) -> None:
