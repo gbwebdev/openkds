@@ -1,6 +1,10 @@
+import logging
 import os
 import re
+import traceback
 from typing import Callable
+
+logger = logging.getLogger(__name__)
 
 try:
     from escpos.printer import File as EscposFile, Usb as EscposUsb
@@ -75,6 +79,7 @@ def print_with_status(printer, print_fn: Callable) -> dict:
         print_fn(printer)
         return {"ok": True, "error": None}
     except Exception as e:
+        logger.error("Print failure: %s\n%s", e, traceback.format_exc())
         return {"ok": False, "error": str(e)}
 
 

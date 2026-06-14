@@ -127,11 +127,16 @@ def _process(printer, rendered: str) -> None:
 
 
 def _cut(printer) -> None:
-    """Feed paper and cut, then flush any write buffer."""
-    printer.text("\n" * 4)
-    # GS V A 0 = feed + full cut (Epson TM and most ESC/POS compatible printers).
-    # Sent as raw bytes to bypass any escpos library version differences.
-    printer._raw(b"\x1d\x56\x41\x00")
+    """Feed paper, cut, then flush any write buffer.
+
+    Uses printer.cut() (which sends GS V 0 = full cut without feed) — the
+    same call that worked in the pre-refactor codebase. The variant GS V A 0
+    (\\x1d\\x56\\x41\\x00) is not supported by all printers and silently
+    no-ops on some firmware revisions.
+    """
+    # Feed enough paper so the text isn't cut through
+    printer._raw(b"\n\n\n\n")
+    printer.cut()
     # Flush Python's write buffer if the printer uses a file descriptor
     # (EscposFile / CDC ACM). Without this, the last bytes can stay in the
     # BufferedWriter buffer indefinitely on a cached long-lived connection.
