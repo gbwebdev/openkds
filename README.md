@@ -80,7 +80,7 @@ docker run -d \
   -p 8000:8000 \
   -v ./data:/data \
   --device /dev/ttyACM0 \
-  ghcr.io/gbwebdev/bazaar-kds:latest
+  ghcr.io/gbwebdev/openkds:latest
 ```
 
 Runtime data (config and database) is persisted in the `/data` volume.
