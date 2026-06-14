@@ -19,15 +19,14 @@ class GrillStockUpdate(BaseModel):
 
 
 class PrinterTestRequest(BaseModel):
-    printer: int | str  # 1, 2, or "both"
+    printer: str  # printer ID, or "all"
 
 
 class ConfigUpdate(BaseModel):
     grill_window_minutes: Optional[int] = None
     grill_segment_size: Optional[int] = None
     next_order_number: Optional[int] = None
-    printer1_device: Optional[str] = None
-    printer2_device: Optional[str] = None
+    printer_devices: Optional[dict] = None   # {printer_id: device_path}
     button_colors: Optional[dict] = None
     org_name: Optional[str] = None
     event_name: Optional[str] = None

@@ -12,8 +12,7 @@ DEFAULT_CONFIG = {
     "grill_window_minutes": 20,
     "grill_segment_size": 6,
     "next_order_number": 1,
-    "printer1_device": "/dev/ttyACM0",
-    "printer2_device": "/dev/ttyACM1",
+    "printer_devices": {},   # {printer_id: device_path}
     "button_colors": {},
     "org_name": "",
     "event_name": "",
