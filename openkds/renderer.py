@@ -10,8 +10,8 @@ ESCPOS = {
     # Reverse video
     "REVERSE_ON":  "\x1d\x42\x01",
     "REVERSE_OFF": "\x1d\x42\x00",
-    # Paper cut (partial)
-    "CUT":         "\x1d\x6d",
+    # Paper cut — GS V 65 0 = feed + full cut (EPSON TM compatible)
+    "CUT":         "\n\n\n\n\x1d\x56\x41\x00",
     # Alignment
     "CENTER":      "\x1b\x61\x01",
     "LEFT":        "\x1b\x61\x00",
@@ -72,7 +72,7 @@ def print_test_ticket(printer, printer_num: int) -> None:
         f"{'=' * 32}\n"
         f"{ESCPOS['CENTER']}Imprimante {printer_num}\n"
         f"Fonctionnement OK\n"
-        f"{'=' * 32}\n"
+        f"{'=' * 32}"
         f"{ESCPOS['CUT']}"
     )
     printer._raw(rendered.encode("cp437", errors="replace"))
