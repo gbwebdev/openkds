@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/gbwebdev/openkds/compare/v0.2.1...v0.2.2) (2026-06-14)
+
+
+### Bug Fixes
+
+* **renderer:** human-readable directive-based ticket templates ([6b17ac1](https://github.com/gbwebdev/openkds/commit/6b17ac12726f00a9170fca2052d73349fa8af1dd))
+
 ## [0.2.1](https://github.com/gbwebdev/openkds/compare/v0.2.0...v0.2.1) (2026-06-14)
 
 
