@@ -50,20 +50,26 @@ menu:
       components:
         frites: 1
 
+printers:
+  - id: caisse
+    label: "Caisse (ticket client)"
+  - id: cuisine
+    label: "Cuisine (assemblage + billigs)"
+
 workshops:
   - id: client
     type: ticket
-    printer: 1
+    printer: caisse
     template: client.j2
 
   - id: assemblage
     type: ticket
-    printer: 2
+    printer: cuisine
     template: assembly.j2
 
   - id: billigs
     type: ticket
-    printer: 2
+    printer: cuisine
     template: billigs.j2
 
   - id: grillade

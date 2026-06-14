@@ -15,7 +15,7 @@ from .database import (
 )
 from .models import OrderCreate, GrillStockUpdate, PrinterTestRequest, ConfigUpdate
 from .grill import get_grill_state
-from .menu import get_menu_items, get_workshops, get_ticket_workshops, compute_order_components
+from .menu import get_menu_items, get_workshops, get_ticket_workshops, get_printers, compute_order_components
 from .printers import try_get_printer, print_with_status
 from .renderer import render_ticket, print_test_ticket
 
@@ -40,6 +40,10 @@ def _get_cached_printer(device: str):
 
 def _invalidate_printer(device: str):
     _printer_cache.pop(device, None)
+
+
+def _device_for(printer_id: str, config: dict) -> str:
+    return config.get("printer_devices", {}).get(printer_id, "")
 
 
 @asynccontextmanager
@@ -168,20 +172,19 @@ def _build_workshop_context(order: dict, workshop: dict, config: dict) -> dict:
 
 
 def _print_order(order: dict, config: dict) -> dict[str, dict]:
-    """Print all ticket workshops. Returns {printer_key: {ok, error}}."""
+    """Print all ticket workshops. Returns {printer_id: {ok, error}}."""
     printer_results: dict[str, dict] = {}
 
     for ws in get_ticket_workshops():
         ws_id = ws["id"]
-        printer_num = ws.get("printer", 1)
-        printer_key = f"printer{printer_num}"
+        printer_id = ws.get("printer", "")
         template_name = ws.get("template", f"{ws_id}.j2")
 
         ctx = _build_workshop_context(order, ws, config)
         if not ctx["workshop_items"]:
             continue
 
-        device = config.get(f"printer{printer_num}_device", "")
+        device = _device_for(printer_id, config)
         printer, _ = _get_cached_printer(device)
 
         r = print_with_status(printer, lambda p, t=template_name, c=ctx: render_ticket(p, t, c))
@@ -189,10 +192,10 @@ def _print_order(order: dict, config: dict) -> dict[str, dict]:
             _invalidate_printer(device)
 
         # Accumulate: a printer is ok only if ALL its workshops succeed
-        if printer_key not in printer_results:
-            printer_results[printer_key] = r
+        if printer_id not in printer_results:
+            printer_results[printer_id] = r
         elif not r["ok"]:
-            printer_results[printer_key] = r
+            printer_results[printer_id] = r
 
     return printer_results
 
@@ -219,13 +222,12 @@ async def create_order(order_data: OrderCreate):
 
     all_ok = all(r["ok"] for r in printer_results.values())
     if not all_ok:
-        for key, r in printer_results.items():
+        for printer_id, r in printer_results.items():
             if not r["ok"]:
-                num = key.replace("printer", "")
                 await broadcast({
                     "type": "printer_error",
-                    "printer": int(num),
-                    "message": f"Printer {num}: {r['error']}",
+                    "printer": printer_id,
+                    "message": f"{printer_id}: {r['error']}",
                 })
 
     response = {
@@ -304,18 +306,21 @@ async def put_config(data: ConfigUpdate):
 
 # ── Printers ──────────────────────────────────────────────────────────────────
 
-@app.get("/api/printers/status")
-async def printers_status():
-    config = load_config()
+@app.get("/api/printers")
+async def api_printers():
+    """Return all declared printers with their device path and connection status."""
     from .printers import get_printer_status
-    result = {}
-    for num in (1, 2):
-        device = config.get(f"printer{num}_device", "")
-        p, err = _get_cached_printer(device)
-        if p:
-            result[f"printer{num}"] = get_printer_status(p)
+    config = load_config()
+    result = []
+    for p in get_printers():
+        pid = p["id"]
+        device = _device_for(pid, config)
+        printer, err = _get_cached_printer(device)
+        if printer:
+            status = get_printer_status(printer)
         else:
-            result[f"printer{num}"] = {"connected": False, "paper_ok": False, "error": err}
+            status = {"connected": False, "paper_ok": False, "error": err}
+        result.append({**p, "device": device, "status": status})
     return result
 
 
@@ -323,15 +328,14 @@ async def printers_status():
 async def printers_test(data: PrinterTestRequest):
     config = load_config()
     results = {}
-    for num in (1, 2):
-        if data.printer not in (num, "both"):
-            continue
-        device = config.get(f"printer{num}_device", "")
+    targets = [p["id"] for p in get_printers()] if data.printer == "all" else [data.printer]
+    for pid in targets:
+        device = _device_for(pid, config)
         p, _ = _get_cached_printer(device)
-        r = print_with_status(p, lambda p, n=num: print_test_ticket(p, n))
+        r = print_with_status(p, lambda p, name=pid: print_test_ticket(p, name))
         if not r["ok"]:
             _invalidate_printer(device)
-        results[f"printer{num}"] = "ok" if r["ok"] else (r["error"] or "error")
+        results[pid] = "ok" if r["ok"] else (r["error"] or "error")
     return results
 
 

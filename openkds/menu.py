@@ -48,6 +48,10 @@ def get_stock_buckets() -> list[dict]:
     ])
 
 
+def get_printers() -> list[dict]:
+    return load_menu().get("printers", [])
+
+
 def get_dashboard_workshops() -> list[dict]:
     return [w for w in get_workshops() if w.get("type") == "dashboard"]
 

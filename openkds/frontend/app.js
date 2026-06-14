@@ -377,22 +377,35 @@ async function loadStats() {
 // ── Settings ───────────────────────────────────────────────────────────────────
 async function loadSettings() {
   try {
-    const [cfgRes, statsRes, pRes] = await Promise.all([
+    const [cfgRes, statsRes, printersRes] = await Promise.all([
       fetch('/api/config'),
       fetch('/api/stats'),
-      fetch('/api/printers/status'),
+      fetch('/api/printers'),
     ]);
     config = await cfgRes.json();
     const stats = await statsRes.json();
-    const printerStatus = await pRes.json();
+    const printers = await printersRes.json();
 
     document.getElementById('warning-service').style.display =
       stats.total_orders > 0 ? 'block' : 'none';
 
-    renderPrinterBadge('p1-status', printerStatus.printer1);
-    renderPrinterBadge('p2-status', printerStatus.printer2);
-    document.getElementById('input-printer1-device').value = config.printer1_device || '';
-    document.getElementById('input-printer2-device').value = config.printer2_device || '';
+    document.getElementById('printer-settings-list').innerHTML = printers.map((p, i) => {
+      const s = p.status || {};
+      const badgeClass = s.connected ? (s.paper_ok ? 'ok' : 'err') : 'err';
+      const badgeText = s.connected ? (s.paper_ok ? '✓ OK' : '⚠️ Papier') : '✗ Déconnectée';
+      return `<div class="printer-card"${i > 0 ? ' style="margin-top:12px"' : ''}>
+        <strong>${p.label || p.id}</strong>
+        <span class="printer-badge ${badgeClass}">${badgeText}</span>
+        <button onclick="testPrinter('${p.id}')" class="btn-test">Test</button>
+      </div>
+      <div class="printer-device-row">
+        <label>Périphérique :
+          <input type="text" id="input-printer-device-${p.id}" class="input-field"
+                 style="width:180px" placeholder="/dev/ttyACM0 ou 04b8:0e15"
+                 value="${p.device || ''}">
+        </label>
+      </div>`;
+    }).join('');
     document.getElementById('input-grill-window').value = config.grill_window_minutes;
     document.getElementById('input-grill-segment').value = config.grill_segment_size;
     document.getElementById('input-org-name').value = config.org_name || '';
@@ -410,18 +423,6 @@ async function loadSettings() {
   } catch {}
 }
 
-function renderPrinterBadge(elemId, status) {
-  const el = document.getElementById(elemId);
-  if (!el || !status) return;
-  if (status.connected) {
-    el.textContent = status.paper_ok ? '✓ OK' : '⚠️ Papier';
-    el.className = 'printer-badge ' + (status.paper_ok ? 'ok' : 'err');
-  } else {
-    el.textContent = '✗ Déconnectée';
-    el.className = 'printer-badge err';
-  }
-}
-
 async function saveIdentity() {
   const org = document.getElementById('input-org-name').value.trim();
   const evt = document.getElementById('input-event-name').value.trim();
@@ -432,9 +433,12 @@ async function saveIdentity() {
 }
 
 async function savePrinterDevices() {
-  const d1 = document.getElementById('input-printer1-device').value.trim();
-  const d2 = document.getElementById('input-printer2-device').value.trim();
-  await saveConfigFields({ printer1_device: d1, printer2_device: d2 });
+  const devices = {};
+  document.querySelectorAll('[id^="input-printer-device-"]').forEach(el => {
+    const id = el.id.replace('input-printer-device-', '');
+    devices[id] = el.value.trim();
+  });
+  await saveConfigFields({ printer_devices: devices });
   showToast('Périphériques enregistrés', 'ok');
   await loadSettings();
 }
@@ -478,17 +482,16 @@ async function saveConfigFields(updates) {
   }
 }
 
-async function testPrinter(num) {
+async function testPrinter(id) {
   try {
     const res = await fetch('/api/printers/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ printer: num }),
+      body: JSON.stringify({ printer: id }),
     });
     const data = await res.json();
-    const key = `printer${num}`;
-    if (data[key] === 'ok') showToast(`Imprimante ${num} : test OK`, 'ok');
-    else showToast(`Imprimante ${num} : ${data[key]}`, 'err');
+    if (data[id] === 'ok') showToast(`${id} : test OK`, 'ok');
+    else showToast(`${id} : ${data[id]}`, 'err');
   } catch {
     showToast('Erreur réseau', 'err');
   }

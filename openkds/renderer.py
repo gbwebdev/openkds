@@ -116,11 +116,11 @@ def render_ticket(printer, template_name: str, context: dict) -> None:
     _process(printer, rendered)
 
 
-def print_test_ticket(printer, printer_num: int) -> None:
+def print_test_ticket(printer, printer_id: str) -> None:
     _process(printer, "\n".join([
         "[center][big]TEST IMPRESSION",
         "[sep]",
-        f"[center][normal]Imprimante {printer_num}",
+        f"[center][normal]{printer_id}",
         "Fonctionnement OK",
         "[sep]",
         "[cut]",
