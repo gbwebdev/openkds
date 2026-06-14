@@ -5,7 +5,7 @@ on:
     types: [published]
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/bazaar-kds
+  IMAGE: ghcr.io/${{ github.repository_owner }}/openkds
 
 jobs:
   build:
