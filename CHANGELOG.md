@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/gbwebdev/openkds/compare/v0.2.0...v0.2.1) (2026-06-14)
+
+
+### Bug Fixes
+
+* **renderer:** correct ESC/POS cut command ([091ee1a](https://github.com/gbwebdev/openkds/commit/091ee1a428a958bcbab79810161990b522122bef))
+
 ## [0.2.0](https://github.com/gbwebdev/openkds/compare/0.1.0...v0.2.0) (2026-06-14)
 
 
