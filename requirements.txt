@@ -1,4 +1,0 @@
-fastapi>=0.110.0
-uvicorn[standard]>=0.29.0
-python-escpos[usb]>=3.0
-pydantic>=2.0

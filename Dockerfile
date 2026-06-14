@@ -6,12 +6,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml .
+COPY openkds/ ./openkds/
+RUN pip install --no-cache-dir .
 
-COPY backend/ ./backend/
-COPY frontend/ ./frontend/
+ENV OPENKDS_DATA_DIR=/data
+VOLUME ["/data"]
 
 EXPOSE 8000
 
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["openkds"]

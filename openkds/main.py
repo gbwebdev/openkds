@@ -51,7 +51,7 @@ MENU_ITEMS = [
     },
 ]
 
-FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+FRONTEND_DIR = Path(__file__).parent / "frontend"
 
 connected_clients: list[WebSocket] = []
 
@@ -358,3 +358,8 @@ async def printers_test(data: PrinterTestRequest):
         results["printer2"] = "ok" if r["ok"] else (r["error"] or "error")
 
     return results
+
+
+def main():
+    import uvicorn
+    uvicorn.run("openkds.main:app", host="0.0.0.0", port=8000)

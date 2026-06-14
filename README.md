@@ -1,6 +1,6 @@
-# Bazaar KDS
+# OpenKDS
 
-Local web-based point-of-sale system for school fairs — tablet order entry, thermal ticket printing, and grill management, self-hosted on a Raspberry Pi with a built-in WiFi hotspot.
+Open-source point-of-sale and kitchen display system for school fairs — tablet order entry, thermal ticket printing, and grill management, self-hosted on a Raspberry Pi with a built-in WiFi hotspot.
 
 ---
 
@@ -19,7 +19,7 @@ Local web-based point-of-sale system for school fairs — tablet order entry, th
 
 | Layer | Technology |
 |---|---|
-| Backend | Python 3.11+, FastAPI, SQLite (`sqlite3`), `python-escpos` |
+| Backend | Python 3.11+, FastAPI, SQLite, `python-escpos` |
 | Frontend | Vanilla JS SPA, HTML5/CSS3 (no framework, no build step) |
 | Real-time | Native FastAPI WebSocket |
 | Supervision | systemd |
@@ -30,12 +30,14 @@ Local web-based point-of-sale system for school fairs — tablet order entry, th
 ## Hardware
 
 - Raspberry Pi 3B+ or newer (or any Linux x86 box)
-- Two USB thermal printers (tested with Epson TM series; PRP-250 notes in specs)
+- Two USB thermal printers (tested with Epson TM series)
 - A tablet or any device with a browser
 
 ---
 
 ## Installation
+
+### Option 1 — Script (Raspberry Pi / bare metal)
 
 Run once as root on the target machine:
 
@@ -45,12 +47,13 @@ sudo bash install.sh
 
 The script:
 1. Installs system dependencies (`python3`, `hostapd`, `dnsmasq`, `libusb`)
-2. Creates a `bazaar` system user
-3. Deploys sources to `/opt/bazaar` and builds a Python virtualenv
-4. Installs udev rules so the `bazaar` user can access USB printers
-5. Configures the WiFi hotspot (hostapd + dnsmasq, static IP `192.168.50.1`)
-6. Registers and enables two systemd services (`bazaar-hotspot`, `bazaar`)
-7. Starts everything immediately — no reboot required
+2. Creates an `openkds` system user
+3. Deploys the package to `/opt/openkds` and installs it in a Python virtualenv
+4. Stores runtime data (config, database) in `/opt/openkds/data`
+5. Installs udev rules so the `openkds` user can access USB printers
+6. Configures the WiFi hotspot (hostapd + dnsmasq, static IP `192.168.50.1`)
+7. Registers and enables two systemd services (`openkds-hotspot`, `openkds`)
+8. Starts everything immediately — no reboot required
 
 After the next boot, everything comes up automatically.
 
@@ -64,22 +67,37 @@ sudo SSID="MySSID" PASSPHRASE="mypassword" WIFI_IFACE="wlan1" bash install.sh
 |---|---|
 | SSID | `Bazaar2026` |
 | Passphrase | `bazaar2026` |
-| Interface | `wlan0` |
+| Interface | auto-detected |
 | Server IP | `192.168.50.1` |
 
 **Tablet URL:** `http://192.168.50.1:8000`
+
+### Option 2 — Docker
+
+```bash
+docker run -d \
+  --name openkds \
+  -p 8000:8000 \
+  -v ./data:/data \
+  --device /dev/ttyACM0 \
+  ghcr.io/gbwebdev/bazaar-kds:latest
+```
+
+Runtime data (config and database) is persisted in the `/data` volume.
+USB printer devices must be passed through with `--device`.
 
 ---
 
 ## Configuration
 
-`config.json` is written on first start and persists user settings:
+`config.json` is written to the data directory on first start and persists user settings:
 
 | Key | Description |
 |---|---|
-| `event_name` | Displayed on customer tickets |
-| `printer1_vendor_id` / `printer1_product_id` | USB IDs for the client-ticket printer (`lsusb` to find them) |
-| `printer2_vendor_id` / `printer2_product_id` | USB IDs for the assembly printer |
+| `org_name` | Organisation name displayed on customer tickets |
+| `event_name` | Event name displayed on customer tickets |
+| `printer1_device` | Device path (`/dev/ttyACM0`) or USB ID (`04b8:0e15`) for the client-ticket printer |
+| `printer2_device` | Device path or USB ID for the assembly printer |
 | `grill_window_minutes` | Sliding window for demand forecast (default: 20 min) |
 | `grill_segment_size` | Units of meat per gauge segment (default: 6) |
 | `button_colors` | Hex color per menu item |
@@ -87,7 +105,7 @@ sudo SSID="MySSID" PASSPHRASE="mypassword" WIFI_IFACE="wlan1" bash install.sh
 
 All settings are also editable from the **Settings** screen in the UI.
 
-> Before the event, run `lsusb` with printers connected to confirm `vendor_id` and `product_id`. Enter them in Settings → Printers.
+> Run `lsusb` with printers connected to find their USB IDs (`VVVV:PPPP`). Enter them in Settings → Printers.
 
 ---
 
@@ -96,22 +114,28 @@ All settings are also editable from the **Settings** screen in the UI.
 No printers required to run the server locally:
 
 ```bash
-cd bazaar
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-uvicorn backend.main:app --reload --port 8000
+pip install -e ".[dev]"   # or: pip install -e .
+openkds
 ```
 
-Open `http://localhost:8000`. Orders are saved to `bazaar.db`; print operations fail gracefully when no printers are configured.
+Or with auto-reload:
+
+```bash
+uvicorn openkds.main:app --reload --port 8000
+```
+
+Open `http://localhost:8000`. Orders are saved to `./openkds.db`; print operations fail gracefully when no printers are configured.
+
+Set `OPENKDS_DATA_DIR` to control where config and database are stored.
 
 ---
 
 ## Useful commands
 
 ```bash
-journalctl -u bazaar -f        # live application logs
-systemctl status bazaar         # service status
-systemctl restart bazaar        # restart after a config change
+journalctl -u openkds -f        # live application logs
+systemctl status openkds        # service status
+systemctl restart openkds       # restart after a config change
 ```
 
 ---
@@ -120,20 +144,20 @@ systemctl restart bazaar        # restart after a config change
 
 ```
 bazaar/
-├── backend/
+├── openkds/
 │   ├── main.py        # FastAPI app, routes, WebSocket
 │   ├── database.py    # SQLite init and queries
 │   ├── models.py      # Pydantic models
 │   ├── printers.py    # USB printer management
 │   ├── tickets.py     # ESC/POS ticket content
 │   ├── grill.py       # Grill demand and gauge logic
-│   └── config.py      # config.json read/write
-├── frontend/
-│   ├── index.html     # Single-page app shell
-│   ├── style.css      # Dark theme, touch-friendly
-│   └── app.js         # Full frontend logic
-├── config.json        # User configuration (persisted)
-├── install.sh         # One-shot setup script
-├── bazaar.service     # systemd unit (reference)
-└── requirements.txt
+│   ├── config.py      # config.json read/write
+│   └── frontend/      # Static files bundled with the package
+│       ├── index.html
+│       ├── style.css
+│       └── app.js
+├── pyproject.toml     # Package definition + entry point
+├── Dockerfile
+├── install.sh         # One-shot bare-metal setup script
+└── openkds.service    # systemd unit (reference)
 ```

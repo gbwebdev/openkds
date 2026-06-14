@@ -7,8 +7,8 @@ set -euo pipefail
 #  Usage : sudo bash install.sh
 # ═══════════════════════════════════════════════════════════════════════════════
 
-INSTALL_DIR="/opt/bazaar"
-SERVICE_USER="bazaar"
+INSTALL_DIR="/opt/openkds"
+SERVICE_USER="openkds"
 SSID="${SSID:-Bazaar2026}"
 PASSPHRASE="${PASSPHRASE:-bazaar2026}"
 SERVER_IP="192.168.50.1"
@@ -62,7 +62,7 @@ step "Optimisation du démarrage réseau"
 # si le câble n'est pas branché le boot ne bloque pas 2 min en attendant
 # un DHCP qui ne répond pas.
 # On écrit un fichier d'overlay séparé pour ne pas toucher à la config existante.
-NETPLAN_OVERLAY="/etc/netplan/60-bazaar-optional.yaml"
+NETPLAN_OVERLAY="/etc/netplan/60-openkds-optional.yaml"
 # Détecter les interfaces ethernet et vlan configurées dans netplan
 ETH_IFACE="$(ip -o link show | awk -F': ' '$2 !~ /lo|docker|br-|veth|wl/ && $3 ~ /ether/ {print $2; exit}')"
 
@@ -105,8 +105,10 @@ fi
 # ── 4. Déploiement des fichiers ───────────────────────────────────────────────
 step "Déploiement dans $INSTALL_DIR"
 
-mkdir -p "$INSTALL_DIR"
-rsync -a --exclude='venv/' --exclude='bazaar.db' "$SCRIPT_DIR/" "$INSTALL_DIR/"
+mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/data"
+rsync -a --exclude='venv/' --exclude='*.db' --exclude='data/' "$SCRIPT_DIR/" "$INSTALL_DIR/"
+# Migrer config.json existant vers data/
+[ -f "$SCRIPT_DIR/config.json" ] && cp "$SCRIPT_DIR/config.json" "$INSTALL_DIR/data/config.json"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 info "Fichiers copiés"
 
@@ -115,7 +117,7 @@ step "Création du virtualenv Python"
 
 python3 -m venv "$INSTALL_DIR/venv"
 "$INSTALL_DIR/venv/bin/pip" install --quiet --upgrade pip
-"$INSTALL_DIR/venv/bin/pip" install --quiet -r "$INSTALL_DIR/requirements.txt"
+"$INSTALL_DIR/venv/bin/pip" install --quiet "$INSTALL_DIR"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/venv"
 info "Virtualenv prêt"
 
@@ -124,11 +126,11 @@ step "Règles udev imprimantes USB"
 
 # Blacklister usblp : le module kernel prend le contrôle des imprimantes USB
 # bulk et empêche libusb (python-escpos) d'y accéder ("resource busy").
-echo "blacklist usblp" > /etc/modprobe.d/bazaar-printers.conf
+echo "blacklist usblp" > /etc/modprobe.d/openkds-printers.conf
 modprobe -r usblp 2>/dev/null || true
 
-cat > /etc/udev/rules.d/99-bazaar-printers.rules <<'EOF'
-# Imprimantes thermiques CDC ACM (port série virtuel USB) — accès pour bazaar
+cat > /etc/udev/rules.d/99-openkds-printers.rules <<'EOF'
+# Imprimantes thermiques CDC ACM (port série virtuel USB) — accès pour openkds
 SUBSYSTEM=="tty", KERNEL=="ttyACM*", GROUP="dialout", MODE="0660"
 # Epson TM series USB bulk — libusb accès direct (usblp blacklisté)
 SUBSYSTEM=="usb", ATTRS{idVendor}=="04b8", GROUP="dialout", MODE="0660"
@@ -148,7 +150,7 @@ if [ "$SKIP_HOTSPOT" -eq 0 ]; then
     if command -v nmcli &>/dev/null; then
         nmcli device set "$WIFI_IFACE" managed no 2>/dev/null || true
         mkdir -p /etc/NetworkManager/conf.d
-        cat > /etc/NetworkManager/conf.d/bazaar-wifi.conf <<EOF
+        cat > /etc/NetworkManager/conf.d/openkds-wifi.conf <<EOF
 [keyfile]
 unmanaged-devices=interface-name:${WIFI_IFACE}
 EOF
@@ -188,11 +190,11 @@ EOF
 
     info "hostapd et dnsmasq configurés"
 
-    # Service bazaar-hotspot : monte l'IP sur l'interface
-    cat > /etc/systemd/system/bazaar-hotspot.service <<EOF
+    # Service openkds-hotspot : monte l'IP sur l'interface
+    cat > /etc/systemd/system/openkds-hotspot.service <<EOF
 [Unit]
-Description=Bazaar WiFi Hotspot
-Before=bazaar.service hostapd.service
+Description=OpenKDS WiFi Hotspot
+Before=openkds.service hostapd.service
 After=network.target
 
 [Service]
@@ -212,37 +214,37 @@ ExecStop=/bin/bash -c '\
 WantedBy=multi-user.target
 EOF
 
-    # Drop-in hostapd : démarre après bazaar-hotspot (interface déjà montée)
+    # Drop-in hostapd : démarre après openkds-hotspot (interface déjà montée)
     mkdir -p /etc/systemd/system/hostapd.service.d
-    cat > /etc/systemd/system/hostapd.service.d/bazaar.conf <<EOF
+    cat > /etc/systemd/system/hostapd.service.d/openkds.conf <<EOF
 [Unit]
-After=bazaar-hotspot.service
-Requires=bazaar-hotspot.service
+After=openkds-hotspot.service
+Requires=openkds-hotspot.service
 EOF
 
     systemctl unmask hostapd 2>/dev/null || true
     systemctl enable hostapd
     systemctl enable dnsmasq
-    systemctl enable bazaar-hotspot
+    systemctl enable openkds-hotspot
     info "Services hotspot activés"
 else
     step "Hotspot ignoré (pas d'interface WiFi)"
 fi
 
 # ── 8. Service application ────────────────────────────────────────────────────
-step "Service systemd bazaar"
+step "Service systemd openkds"
 
 if [ "$SKIP_HOTSPOT" -eq 0 ]; then
-    AFTER_LINE="After=network.target bazaar-hotspot.service"
-    WANTS_LINE="Wants=bazaar-hotspot.service"
+    AFTER_LINE="After=network.target openkds-hotspot.service"
+    WANTS_LINE="Wants=openkds-hotspot.service"
 else
     AFTER_LINE="After=network.target"
     WANTS_LINE=""
 fi
 
-cat > /etc/systemd/system/bazaar.service <<EOF
+cat > /etc/systemd/system/openkds.service <<EOF
 [Unit]
-Description=Bazaar Restaurant System
+Description=OpenKDS Restaurant System
 ${AFTER_LINE}
 ${WANTS_LINE}
 StartLimitIntervalSec=0
@@ -250,8 +252,8 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 User=${SERVICE_USER}
-WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
+Environment=OPENKDS_DATA_DIR=${INSTALL_DIR}/data
+ExecStart=${INSTALL_DIR}/venv/bin/openkds
 Restart=always
 RestartSec=3
 StandardOutput=journal
@@ -262,8 +264,8 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable bazaar
-info "Service bazaar activé"
+systemctl enable openkds
+info "Service openkds activé"
 
 # ── 9. Démarrage immédiat ─────────────────────────────────────────────────────
 step "Démarrage des services"
@@ -276,7 +278,7 @@ if [ "$SKIP_HOTSPOT" -eq 0 ]; then
     systemctl restart dnsmasq
 fi
 
-systemctl restart bazaar
+systemctl restart openkds
 info "Services démarrés"
 
 # ── Résumé ────────────────────────────────────────────────────────────────────
@@ -295,9 +297,9 @@ else
 fi
 echo ""
 echo -e "  Commandes utiles :"
-echo -e "    journalctl -u bazaar -f        # logs application"
-echo -e "    systemctl status bazaar         # statut"
-echo -e "    systemctl restart bazaar        # redémarrer"
+echo -e "    journalctl -u openkds -f        # logs application"
+echo -e "    systemctl status openkds        # statut"
+echo -e "    systemctl restart openkds       # redémarrer"
 echo ""
 echo -e "  ${YELLOW}Au prochain démarrage, tout sera actif automatiquement.${NC}"
 echo ""

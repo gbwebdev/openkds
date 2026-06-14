@@ -1,8 +1,10 @@
 import json
+import os
 import threading
 from pathlib import Path
 
-CONFIG_PATH = Path(__file__).parent.parent / "config.json"
+_DATA_DIR = Path(os.environ.get("OPENKDS_DATA_DIR", Path.cwd()))
+CONFIG_PATH = _DATA_DIR / "config.json"
 
 _lock = threading.Lock()
 

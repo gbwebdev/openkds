@@ -1,9 +1,10 @@
+import os
 import sqlite3
 from pathlib import Path
 from datetime import datetime
 from contextlib import contextmanager
 
-DB_PATH = Path(__file__).parent.parent / "bazaar.db"
+DB_PATH = Path(os.environ.get("OPENKDS_DATA_DIR", Path.cwd())) / "openkds.db"
 
 
 def init_db():
