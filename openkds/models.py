@@ -1,54 +1,21 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, model_validator
 from typing import Optional
 
 
 class OrderCreate(BaseModel):
-    adulte_merguez: int = 0
-    adulte_chipo: int = 0
-    enfant_merguez: int = 0
-    enfant_chipo: int = 0
-    galette_saucisse: int = 0
-    barquette_frite: int = 0
+    items: dict[str, int]
 
     @model_validator(mode="after")
     def check_not_empty(self):
-        total = (
-            self.adulte_merguez + self.adulte_chipo +
-            self.enfant_merguez + self.enfant_chipo +
-            self.galette_saucisse + self.barquette_frite
-        )
-        if total == 0:
-            raise ValueError("La commande ne peut pas être vide")
+        if sum(v for v in self.items.values() if v > 0) == 0:
+            raise ValueError("Order cannot be empty")
         return self
 
 
-class Order(BaseModel):
-    id: int
-    number: int
-    created_at: str
-    adulte_merguez: int
-    adulte_chipo: int
-    enfant_merguez: int
-    enfant_chipo: int
-    galette_saucisse: int
-    barquette_frite: int
-
-    class Config:
-        from_attributes = True
-
-
-class OrderResponse(BaseModel):
-    id: int
-    number: int
-    created_at: str
-    printer1_status: str
-    printer2_status: str
-
-
 class GrillStockUpdate(BaseModel):
-    merguez: Optional[int] = None
-    chipo: Optional[int] = None
-    saucisse: Optional[int] = None
+    model_config = {"extra": "allow"}
 
 
 class PrinterTestRequest(BaseModel):

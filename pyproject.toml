@@ -12,6 +12,8 @@ dependencies = [
     "uvicorn[standard]>=0.29.0",
     "python-escpos[usb]>=3.0",
     "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "jinja2>=3.0",
 ]
 
 [project.scripts]
@@ -22,4 +24,4 @@ where = ["."]
 include = ["openkds*"]
 
 [tool.setuptools.package-data]
-openkds = ["frontend/*"]
+openkds = ["frontend/*", "defaults/*", "default_templates/*"]

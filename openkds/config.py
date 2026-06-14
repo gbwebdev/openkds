@@ -14,16 +14,9 @@ DEFAULT_CONFIG = {
     "next_order_number": 1,
     "printer1_device": "/dev/ttyACM0",
     "printer2_device": "/dev/ttyACM1",
-    "button_colors": {
-        "adulte_merguez":  "#e74c3c",
-        "adulte_chipo":    "#e67e22",
-        "enfant_merguez":  "#f39c12",
-        "enfant_chipo":    "#2ecc71",
-        "galette_saucisse":"#3498db",
-        "barquette_frite": "#9b59b6"
-    },
+    "button_colors": {},
     "org_name": "",
-    "event_name": "Kermesse de l'École 2026"
+    "event_name": "",
 }
 
 

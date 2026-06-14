@@ -1,0 +1,16 @@
+{{ CENTER }}{{ NORMAL }}{{ BOLD_OFF -}}
+{% if config.org_name %}
+{{ config.org_name }}
+{% endif -%}
+{{ CENTER }}{{ BOLD_ON }}{{ SIZE_2HW }}{{ config.event_name or '' }}
+{{ NORMAL }}{{ BOLD_OFF }}{{ "=" * 32 }}
+{{ CENTER }}{{ BOLD_ON }}{{ SIZE_3H2W }}COMMANDE #{{ "%03d" % order.number }}
+{{ NORMAL }}{{ BOLD_OFF }}{{ "=" * 32 }}
+{{ LEFT }}
+{% for item in workshop_items -%}
+  {{ item.qty }}x {{ item.label | replace('\n', ' ') }}
+{% endfor -%}
+{{ "=" * 32 }}
+{{ CENTER }}Presentez ce ticket
+a la remise de commande
+{{ CUT }}

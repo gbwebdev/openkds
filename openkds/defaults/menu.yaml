@@ -1,0 +1,94 @@
+menu:
+  items:
+    - id: adulte_merguez
+      label: "Menu Adulte\nMerguez"
+      color: "#e74c3c"
+      workshops: [client, assemblage, grillade]
+      components:
+        merguez: 2
+        frites: 1
+        boisson: 1
+
+    - id: adulte_chipo
+      label: "Menu Adulte\nChipolatas"
+      color: "#e67e22"
+      workshops: [client, assemblage, grillade]
+      components:
+        chipo: 2
+        frites: 1
+        boisson: 1
+
+    - id: enfant_merguez
+      label: "Menu Enfant\nMerguez"
+      color: "#f39c12"
+      workshops: [client, assemblage, grillade]
+      components:
+        merguez: 1
+        frites: 1
+        boisson: 1
+
+    - id: enfant_chipo
+      label: "Menu Enfant\nChipolatas"
+      color: "#2ecc71"
+      workshops: [client, assemblage, grillade]
+      components:
+        chipo: 1
+        frites: 1
+        boisson: 1
+
+    - id: galette_saucisse
+      label: "Galette\nSaucisse"
+      color: "#3498db"
+      workshops: [client, billigs]
+      components:
+        saucisse: 1
+
+    - id: barquette_frite
+      label: "Barquette\nFrite"
+      color: "#9b59b6"
+      workshops: [client, assemblage]
+      components:
+        frites: 1
+
+workshops:
+  - id: client
+    type: ticket
+    printer: 1
+    template: client.j2
+
+  - id: assemblage
+    type: ticket
+    printer: 2
+    template: assembly.j2
+
+  - id: billigs
+    type: ticket
+    printer: 2
+    template: billigs.j2
+
+  - id: grillade
+    type: dashboard
+    tracks: [merguez, chipo, saucisse]
+    track_labels:
+      merguez: Merguez
+      chipo: Chipolatas
+      saucisse: Saucisse
+
+grill:
+  stock_buckets:
+    - label: "0–6"
+      min: 0
+      max: 6
+      midpoint: 3
+    - label: "6–12"
+      min: 6
+      max: 12
+      midpoint: 9
+    - label: "12–18"
+      min: 12
+      max: 18
+      midpoint: 15
+    - label: "18+"
+      min: 18
+      max: 999
+      midpoint: 21

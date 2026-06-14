@@ -1,8 +1,11 @@
+from __future__ import annotations
+
+import json
 import os
 import sqlite3
-from pathlib import Path
-from datetime import datetime
 from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
 
 DB_PATH = Path(os.environ.get("OPENKDS_DATA_DIR", Path.cwd())) / "openkds.db"
 
@@ -11,27 +14,20 @@ def init_db():
     with get_connection() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS orders (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                number          INTEGER NOT NULL,
-                created_at      TEXT NOT NULL,
-                adulte_merguez  INTEGER NOT NULL DEFAULT 0,
-                adulte_chipo    INTEGER NOT NULL DEFAULT 0,
-                enfant_merguez  INTEGER NOT NULL DEFAULT 0,
-                enfant_chipo    INTEGER NOT NULL DEFAULT 0,
-                galette_saucisse INTEGER NOT NULL DEFAULT 0,
-                barquette_frite  INTEGER NOT NULL DEFAULT 0
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                number       INTEGER NOT NULL,
+                created_at   TEXT NOT NULL,
+                items        TEXT NOT NULL DEFAULT '{}'
             );
 
             CREATE TABLE IF NOT EXISTS grill_stock (
-                id          INTEGER PRIMARY KEY CHECK (id = 1),
-                merguez     INTEGER NOT NULL DEFAULT 0,
-                chipo       INTEGER NOT NULL DEFAULT 0,
-                saucisse    INTEGER NOT NULL DEFAULT 0,
-                updated_at  TEXT NOT NULL
+                id         INTEGER PRIMARY KEY CHECK (id = 1),
+                stock      TEXT NOT NULL DEFAULT '{}',
+                updated_at TEXT NOT NULL
             );
 
-            INSERT OR IGNORE INTO grill_stock (id, merguez, chipo, saucisse, updated_at)
-            VALUES (1, 0, 0, 0, datetime('now'));
+            INSERT OR IGNORE INTO grill_stock (id, stock, updated_at)
+            VALUES (1, '{}', datetime('now'));
         """)
 
 
@@ -53,40 +49,38 @@ def insert_order(number: int, items: dict) -> dict:
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     with get_connection() as conn:
         cursor = conn.execute(
-            """INSERT INTO orders
-               (number, created_at, adulte_merguez, adulte_chipo, enfant_merguez,
-                enfant_chipo, galette_saucisse, barquette_frite)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                number, now,
-                items.get("adulte_merguez", 0),
-                items.get("adulte_chipo", 0),
-                items.get("enfant_merguez", 0),
-                items.get("enfant_chipo", 0),
-                items.get("galette_saucisse", 0),
-                items.get("barquette_frite", 0),
-            )
+            "INSERT INTO orders (number, created_at, items) VALUES (?, ?, ?)",
+            (number, now, json.dumps(items)),
         )
         row_id = cursor.lastrowid
     return get_order_by_id(row_id)
 
 
+def _row_to_dict(row) -> dict:
+    d = dict(row)
+    if "items" in d and isinstance(d["items"], str):
+        d["items"] = json.loads(d["items"])
+    return d
+
+
 def get_order_by_id(order_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-    return dict(row) if row else None
+    return _row_to_dict(row) if row else None
 
 
 def get_all_orders() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM orders ORDER BY number DESC").fetchall()
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 def delete_all_orders():
     with get_connection() as conn:
         conn.execute("DELETE FROM orders")
-        conn.execute("UPDATE grill_stock SET merguez=0, chipo=0, saucisse=0, updated_at=datetime('now') WHERE id=1")
+        conn.execute(
+            "UPDATE grill_stock SET stock='{}', updated_at=datetime('now') WHERE id=1"
+        )
 
 
 def get_orders_since(cutoff_iso: str) -> list[dict]:
@@ -94,84 +88,74 @@ def get_orders_since(cutoff_iso: str) -> list[dict]:
         rows = conn.execute(
             "SELECT * FROM orders WHERE created_at >= ?", (cutoff_iso,)
         ).fetchall()
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 def get_grill_stock() -> dict:
     with get_connection() as conn:
-        row = conn.execute("SELECT * FROM grill_stock WHERE id=1").fetchone()
-    return dict(row) if row else {"merguez": 0, "chipo": 0, "saucisse": 0}
+        row = conn.execute("SELECT stock FROM grill_stock WHERE id=1").fetchone()
+    return json.loads(row["stock"]) if row else {}
 
 
-def update_grill_stock(merguez: int | None, chipo: int | None, saucisse: int | None) -> dict:
+def update_grill_stock(updates: dict) -> dict:
     stock = get_grill_stock()
-    if merguez is not None:
-        stock["merguez"] = merguez
-    if chipo is not None:
-        stock["chipo"] = chipo
-    if saucisse is not None:
-        stock["saucisse"] = saucisse
+    stock.update(updates)
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     with get_connection() as conn:
         conn.execute(
-            "UPDATE grill_stock SET merguez=?, chipo=?, saucisse=?, updated_at=? WHERE id=1",
-            (stock["merguez"], stock["chipo"], stock["saucisse"], now)
+            "UPDATE grill_stock SET stock=?, updated_at=? WHERE id=1",
+            (json.dumps(stock), now),
         )
     return stock
 
 
-def get_stats() -> dict:
+def get_stats(menu_items: list[dict]) -> dict:
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM orders ORDER BY created_at ASC").fetchall()
 
-    orders = [dict(r) for r in rows]
-    total_orders = len(orders)
+    orders = [_row_to_dict(r) for r in rows]
+    items_map = {i["id"]: i for i in menu_items}
 
-    totals = {
-        "adulte_merguez": 0, "adulte_chipo": 0,
-        "enfant_merguez": 0, "enfant_chipo": 0,
-        "galette_saucisse": 0, "barquette_frite": 0,
-    }
-    components = {"frites": 0, "merguez": 0, "chipo": 0, "saucisse": 0, "boisson": 0}
+    item_totals: dict[str, int] = {}
+    component_totals: dict[str, int] = {}
 
-    for o in orders:
-        for k in totals:
-            totals[k] += o[k]
-        components["frites"] += (o["adulte_merguez"] + o["adulte_chipo"] +
-                                  o["enfant_merguez"] + o["enfant_chipo"] +
-                                  o["barquette_frite"])
-        components["merguez"] += 2 * o["adulte_merguez"] + o["enfant_merguez"]
-        components["chipo"] += 2 * o["adulte_chipo"] + o["enfant_chipo"]
-        components["saucisse"] += o["galette_saucisse"]
-        components["boisson"] += (o["adulte_merguez"] + o["adulte_chipo"] +
-                                   o["enfant_merguez"] + o["enfant_chipo"])
+    for order in orders:
+        for item_id, qty in order.get("items", {}).items():
+            if qty <= 0:
+                continue
+            item_totals[item_id] = item_totals.get(item_id, 0) + qty
+            if item_id in items_map:
+                for comp, mult in items_map[item_id].get("components", {}).items():
+                    component_totals[comp] = component_totals.get(comp, 0) + mult * qty
 
-    histogram = _build_histogram(orders)
+    items_summary = [
+        {
+            "id": item["id"],
+            "label": item["label"].replace("\n", " "),
+            "total": item_totals.get(item["id"], 0),
+        }
+        for item in menu_items
+    ]
 
     return {
-        "total_orders": total_orders,
-        "totals": totals,
-        "components": components,
-        "histogram": histogram,
+        "total_orders": len(orders),
+        "items": items_summary,
+        "components": component_totals,
+        "histogram": _build_histogram(orders),
     }
 
 
 def _build_histogram(orders: list[dict]) -> list[dict]:
     if not orders:
         return []
-
-    from datetime import datetime, timedelta
-
+    from datetime import timedelta
     first = datetime.fromisoformat(orders[0]["created_at"])
     slot_minutes = 10
     buckets: dict[str, int] = {}
-
     for o in orders:
         dt = datetime.fromisoformat(o["created_at"])
-        delta = int((dt - first).total_seconds() // 60)
-        slot_index = delta // slot_minutes
+        slot_index = int((dt - first).total_seconds() // 60) // slot_minutes
         slot_dt = first + timedelta(minutes=slot_index * slot_minutes)
-        slot_label = slot_dt.strftime("%H:%M")
-        buckets[slot_label] = buckets.get(slot_label, 0) + 1
-
+        label = slot_dt.strftime("%H:%M")
+        buckets[label] = buckets.get(label, 0) + 1
     return [{"slot": k, "count": v} for k, v in sorted(buckets.items())]

@@ -1,0 +1,13 @@
+{{ REVERSE_ON }}{{ " " * 48 }}
+{{ "      BILLIGS      " }}
+{{ " " * 48 }}{{ REVERSE_OFF -}}
+{{ REVERSE_ON }}{{ " " * 48 }}{{ REVERSE_OFF }}
+{{ CENTER }}{{ BOLD_ON }}{{ SIZE_3H2W }}#{{ "%03d" % order.number }}
+{{ NORMAL }}{{ BOLD_OFF }}{{ LEFT }}
+{% for item in workshop_items -%}
+{% for _ in range(item.qty) -%}
+  [ ] {{ item.label | replace('\n', ' ') }}
+{% endfor -%}
+{% endfor %}
+{{ REVERSE_ON }}{{ " " * 48 }}{{ REVERSE_OFF }}
+{{ CUT }}
