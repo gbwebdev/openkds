@@ -1,23 +1,16 @@
-{{ CENTER }}{{ BOLD_ON }}{{ SIZE_2HW }}== ASSEMBLAGE ==
-{{ CENTER }}{{ BOLD_ON }}{{ SIZE_2HW }}COMMANDE #{{ "%03d" % order.number }}
-{{ NORMAL }}{{ BOLD_OFF }}{{ "=" * 32 }}
-{% for item in workshop_items -%}
-{% for _ in range(item.qty) -%}
-[ ] {{ item.label | replace('\n', ' ') }}
-{% endfor -%}
-{% endfor -%}
-{{ "-" * 32 }}
-{% if workshop_components.get('frites', 0) > 0 -%}
-Frites    : {{ workshop_components['frites'] }}
-{% endif -%}
-{% if workshop_components.get('merguez', 0) > 0 -%}
-Merguez   : {{ workshop_components['merguez'] }}
-{% endif -%}
-{% if workshop_components.get('chipo', 0) > 0 -%}
-Chipolatas: {{ workshop_components['chipo'] }}
-{% endif -%}
-{% if workshop_components.get('boisson', 0) > 0 -%}
-Boissons  : {{ workshop_components['boisson'] }}
-{% endif -%}
-{{ "=" * 32 }}
-{{ CUT }}
+{#
+  OpenKDS — ticket assemblage (fiche de préparation cuisine)
+  Charset : cp437 | Largeur : 48 car. normal, 24 car. big
+#}
+[center][big]== ASSEMBLAGE ==
+[big]COMMANDE #{{ "%03d" % order.number }}
+[sep]
+[left][normal]
+{% for item in workshop_items %}{% for _ in range(item.qty) %}[ ] {{ item.label | replace('\n', ' ') }}
+{% endfor %}{% endfor %}[sep-]
+{% if workshop_components.get('frites', 0) %}Frites    : {{ workshop_components['frites'] }}
+{% endif %}{% if workshop_components.get('merguez', 0) %}Merguez   : {{ workshop_components['merguez'] }}
+{% endif %}{% if workshop_components.get('chipo', 0) %}Chipolatas: {{ workshop_components['chipo'] }}
+{% endif %}{% if workshop_components.get('boisson', 0) %}Boissons  : {{ workshop_components['boisson'] }}
+{% endif %}[sep]
+[cut]
