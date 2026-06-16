@@ -1,6 +1,7 @@
 {
   "grill_window_minutes": 20,
   "grill_segment_size": 6,
+  "grill_demand_threshold": 3,
   "next_order_number": 1,
   "printer_devices": {},
   "button_colors": {},

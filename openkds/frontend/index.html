@@ -14,32 +14,36 @@
 </head>
 <body>
 
-<!-- ═══════════════════════════════ MAIN SCREEN ════════════════════════════ -->
-<div id="screen-main" class="screen active">
-
-  <nav class="navbar">
-    <div class="navbar-left">
-      <span id="ws-indicator" class="ws-dot disconnected" title="WebSocket"></span>
-      <span id="event-name" class="event-name"></span>
-    </div>
-    <div class="navbar-right">
-      <button class="nav-btn" onclick="showScreen('commandes')">
-        Commandes <span id="cmd-nav-badge" class="nav-badge" style="display:none">0</span>
-      </button>
-      <button class="nav-btn" onclick="showScreen('stats')">Stats</button>
-      <button class="nav-btn" onclick="showScreen('settings')">Paramètres</button>
-    </div>
-  </nav>
-
-  <!-- Saved draft banner — only visible when a draft exists in localStorage -->
-  <div id="draft-banner" class="draft-banner" style="display:none">
-    <span><strong>1 commande en attente</strong> <span id="draft-banner-summary"></span></span>
-    <div>
-      <button class="btn-resume" onclick="resumeDraft()">Reprendre</button>
-      <button class="btn-discard" onclick="discardDraft()">Supprimer</button>
-    </div>
+<!-- ═══════════════════════════════ GLOBAL NAVBAR ════════════════════════════ -->
+<nav class="navbar" id="navbar">
+  <div class="navbar-left">
+    <span id="ws-indicator" class="ws-dot disconnected" title="WebSocket"></span>
+    <a href="/" class="navbar-brand" data-link>OpenKDS</a>
+    <span id="event-name" class="event-name"></span>
   </div>
+  <button id="nav-burger" class="nav-burger" aria-label="Menu" onclick="toggleMenu()">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="navbar-right" id="navbar-right">
+    <a href="/orders" class="nav-btn" data-link>
+      Commandes <span id="cmd-nav-badge" class="nav-badge" style="display:none">0</span>
+    </a>
+    <a href="/stats" class="nav-btn" data-link>Stats</a>
+    <a href="/settings" class="nav-btn" data-link>Paramètres</a>
+  </div>
+</nav>
 
+<!-- Saved draft banner — only visible when a draft exists in localStorage -->
+<div id="draft-banner" class="draft-banner" style="display:none">
+  <span><strong>1 commande en attente</strong> <span id="draft-banner-summary"></span></span>
+  <div>
+    <button class="btn-resume" onclick="resumeDraft()">Reprendre</button>
+    <button class="btn-discard" onclick="discardDraft()">Supprimer</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ CASHIER (/) ═══════════════════════════════ -->
+<div id="screen-cashier" class="screen active">
   <div class="main-layout">
 
     <!-- Menu buttons -->
@@ -69,21 +73,20 @@
         </button>
       </div>
 
-      <div class="grill-widget" id="grill-widget" onclick="showScreen('grill')">
+      <a href="/grill" class="grill-widget" id="grill-widget" data-link>
         <div class="grill-widget-title">GRILLADES</div>
         <div id="grill-widget-content">
           <!-- Populated by JS -->
         </div>
-      </div>
+      </a>
     </div>
 
   </div>
 </div>
 
-<!-- ════════════════════════════ GRILL SCREEN ══════════════════════════════ -->
+<!-- ═══════════════════════════════ GRILL (/grill) ═══════════════════════════ -->
 <div id="screen-grill" class="screen">
   <div class="screen-header">
-    <button class="back-btn" onclick="showScreen('main')">← Retour</button>
     <h1>Module Grillades</h1>
   </div>
   <div id="grill-content" class="grill-full">
@@ -91,10 +94,9 @@
   </div>
 </div>
 
-<!-- ══════════════════════════ COMMANDES SCREEN ═══════════════════════════ -->
-<div id="screen-commandes" class="screen">
+<!-- ═══════════════════════════════ ORDERS (/orders) ═════════════════════════ -->
+<div id="screen-orders" class="screen">
   <div class="screen-header">
-    <button class="back-btn" onclick="showScreen('main')">← Retour</button>
     <h1>Commandes</h1>
   </div>
   <div class="cmd-tabs">
@@ -113,10 +115,9 @@
   </div>
 </div>
 
-<!-- ════════════════════════════ STATS SCREEN ══════════════════════════════ -->
+<!-- ═══════════════════════════════ STATS (/stats) ═══════════════════════════ -->
 <div id="screen-stats" class="screen">
   <div class="screen-header">
-    <button class="back-btn" onclick="showScreen('main')">← Retour</button>
     <h1>Statistiques</h1>
   </div>
   <div id="stats-content" class="stats-content">
@@ -124,10 +125,9 @@
   </div>
 </div>
 
-<!-- ══════════════════════════ SETTINGS SCREEN ════════════════════════════ -->
+<!-- ═══════════════════════════════ SETTINGS (/settings) ════════════════════ -->
 <div id="screen-settings" class="screen">
   <div class="screen-header">
-    <button class="back-btn" onclick="showScreen('main')">← Retour</button>
     <h1>Paramètres</h1>
   </div>
   <div id="settings-content" class="settings-content">
@@ -196,6 +196,14 @@
         <input type="number" id="input-grill-segment" min="1" max="24" class="input-field" style="width:80px">
       </label>
       <br><br>
+      <label>
+        Seuil minimal de demande :
+        <input type="number" id="input-grill-threshold" min="0" max="50" class="input-field" style="width:80px">
+        <small style="display:block;color:#888;margin-top:4px">
+          En dessous de ce seuil, les jauges restent au repos (l'affichage de la demande reste exact).
+        </small>
+      </label>
+      <br><br>
       <button onclick="saveGrillParams()" class="btn-save">Enregistrer</button>
     </section>
 
@@ -223,7 +231,6 @@
 <!-- ════════════════════════════ MODALS ════════════════════════════════════ -->
 <div id="modal-overlay" class="modal-overlay" style="display:none">
 
-  <!-- Cancel current draft confirmation -->
   <div id="modal-cancel" class="modal" style="display:none">
     <p>Effacer la commande en cours ?</p>
     <div class="modal-actions">
@@ -232,7 +239,6 @@
     </div>
   </div>
 
-  <!-- Cancel submitted order confirmation -->
   <div id="modal-cancel-order" class="modal" style="display:none">
     <p>Annuler la commande <strong id="modal-cancel-order-number">#000</strong> ?</p>
     <p style="color:#888;font-size:.9rem">L'annulation est irréversible.</p>
@@ -242,7 +248,6 @@
     </div>
   </div>
 
-  <!-- Reset confirmation (step 1) -->
   <div id="modal-reset1" class="modal" style="display:none">
     <p>Effacer tout l'historique et remettre le compteur à 1 ?</p>
     <div class="modal-actions">
@@ -251,7 +256,6 @@
     </div>
   </div>
 
-  <!-- Reset confirmation (step 2) -->
   <div id="modal-reset2" class="modal" style="display:none">
     <p><strong>Dernière confirmation.</strong><br>Cette action est irréversible.</p>
     <div class="modal-actions">
@@ -261,6 +265,9 @@
   </div>
 
 </div>
+
+<!-- Mobile menu backdrop -->
+<div id="menu-backdrop" class="menu-backdrop" style="display:none" onclick="toggleMenu()"></div>
 
 <!-- ═══════════════════════════ TOAST ══════════════════════════════════════ -->
 <div id="toast" class="toast" style="display:none"></div>

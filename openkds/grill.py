@@ -29,7 +29,17 @@ def compute_demand(window_minutes: int) -> dict:
     return demand
 
 
-def compute_gauge(demand: int, stock_bucket_index: int, segment_size: int) -> int:
+def compute_gauge(demand: int, stock_bucket_index: int, segment_size: int,
+                  threshold: int = 0) -> int:
+    """Compute a 0-4 gauge level for one component.
+
+    `threshold` is the minimum raw demand under which the gauge stays at 0
+    regardless of stock — used to ignore early noise when only one or two
+    items are in the pipeline. Affects gauges only; raw demand is reported
+    independently to the UI.
+    """
+    if demand < threshold:
+        return 0
     buckets = get_stock_buckets()
     if stock_bucket_index >= len(buckets):
         stock_bucket_index = len(buckets) - 1
@@ -42,6 +52,7 @@ def compute_gauge(demand: int, stock_bucket_index: int, segment_size: int) -> in
 def get_grill_state(config: dict) -> dict:
     window_minutes = config.get("grill_window_minutes", 20)
     segment_size = config.get("grill_segment_size", 6)
+    threshold = config.get("grill_demand_threshold", 3)
 
     demand = compute_demand(window_minutes)
     stock = database.get_grill_stock()
@@ -52,7 +63,7 @@ def get_grill_state(config: dict) -> dict:
         tracks = ws.get("tracks", [])
         track_labels = ws.get("track_labels", {t: t for t in tracks})
         gauges = {
-            t: compute_gauge(demand.get(t, 0), stock.get(t, 0), segment_size)
+            t: compute_gauge(demand.get(t, 0), stock.get(t, 0), segment_size, threshold)
             for t in tracks
         }
         dashboards[ws["id"]] = {
@@ -64,6 +75,7 @@ def get_grill_state(config: dict) -> dict:
             "stock_buckets": buckets,
             "window_minutes": window_minutes,
             "segment_size": segment_size,
+            "demand_threshold": threshold,
         }
 
     return {"dashboards": dashboards}
