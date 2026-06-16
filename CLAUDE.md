@@ -57,6 +57,17 @@
 - Les listes dynamiques (imprimantes, items du menu, couleurs…) sont générées depuis les APIs,
   jamais codées en dur dans le HTML.
 
+## i18n
+
+- Traductions dans `openkds/locales/<lang>.json` (clés plates, namespace par `.`).
+- Toute string visible côté UI doit passer par `t('clé')` en JS ou `data-i18n="clé"` en HTML.
+- `data-i18n-placeholder="clé"` pour les `placeholder` des inputs.
+- Si tu ajoutes une string, ajoute-la dans **toutes** les locales (`fr.json` et `en.json`), keys
+  matched 1:1 entre langues — vérifié facilement avec `diff <(jq -S keys fr.json) <(jq -S keys en.json)`.
+- Les noms d'items du menu et le contenu des tickets thermiques ne sont **pas** dans le système
+  i18n — ils viennent de `menu.yaml` et des templates Jinja2, à charge de l'utilisateur.
+- Logs et messages d'erreur côté Python restent en anglais.
+
 ## README
 
 - Mettre à jour le README dans le même commit que tout changement d'architecture,

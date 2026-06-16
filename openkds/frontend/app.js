@@ -100,6 +100,41 @@ function applyGrillWidgetState() {
   if (toggle) toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
 }
 
+// ── i18n ──────────────────────────────────────────────────────────────────────
+let i18n = { lang: 'fr', available: ['fr', 'en'], strings: {} };
+
+function t(key, vars) {
+  let s = i18n.strings[key];
+  if (s === undefined) s = key;          // fallback: surface missing keys
+  if (vars) {
+    for (const k of Object.keys(vars)) {
+      s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), vars[k]);
+    }
+  }
+  return s;
+}
+
+function applyI18n(root) {
+  const scope = root || document;
+  scope.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (i18n.strings[key] !== undefined) el.textContent = i18n.strings[key];
+  });
+  scope.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (i18n.strings[key] !== undefined) el.setAttribute('placeholder', i18n.strings[key]);
+  });
+}
+
+async function loadI18n() {
+  try {
+    const res = await fetch('/api/i18n');
+    i18n = await res.json();
+    document.documentElement.lang = i18n.lang;
+  } catch {}
+  applyI18n();
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   const params = new URLSearchParams(location.search);
@@ -110,6 +145,8 @@ async function init() {
   setupLinkInterceptor();
   applyGrillWidgetState();
 
+  // Load i18n first so the initial paint is in the user's language.
+  await loadI18n();
   await Promise.all([loadConfig(), loadMenu()]);
   connectWebSocket();
   loadGrillState();
@@ -190,7 +227,7 @@ function updateOrderUI() {
   const lines = document.getElementById('order-lines');
   const items = menuItems.filter(i => (currentOrder[i.id] || 0) > 0);
   if (items.length === 0) {
-    lines.innerHTML = '<p class="empty-msg">Aucun article</p>';
+    lines.innerHTML = `<p class="empty-msg">${t('order.empty')}</p>`;
   } else {
     lines.innerHTML = items.map(item => {
       const qty = currentOrder[item.id];
@@ -221,19 +258,19 @@ async function submitOrder() {
     const data = await res.json();
     const num = String(data.number).padStart(3, '0');
     if (res.status === 200) {
-      showToast(`✓ Commande #${num} imprimée`, 'ok');
+      showToast(t('order.printed_ok', { num }), 'ok');
     } else if (res.status === 207) {
       const errs = Object.entries(data)
         .filter(([k, v]) => k.endsWith('_status') && v !== 'ok')
-        .map(([k, v]) => `${k.replace('_status','')}: ${v}`);
-      showToast(`⚠️ Commande #${num} enregistrée — ${errs.join(' / ')}`, 'warn', 6000);
+        .map(([k, v]) => `${k.replace('_status','')}: ${v}`).join(' / ');
+      showToast(t('order.printed_warn', { num, errs }), 'warn', 6000);
     } else {
-      showToast(`Erreur: ${data.detail || 'inconnue'}`, 'err');
+      showToast(t('order.error_prefix', { detail: data.detail || '?' }), 'err');
     }
     currentOrder = {};
     updateOrderUI();
   } catch {
-    showToast('Erreur réseau', 'err');
+    showToast(t('common.network_error'), 'err');
     btn.disabled = false;
   }
 }
@@ -257,13 +294,13 @@ function holdOrder() {
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(currentOrder));
   } catch {
-    showToast('Impossible de sauvegarder en attente', 'err');
+    showToast(t('draft.save_failed'), 'err');
     return;
   }
   currentOrder = {};
   updateOrderUI();
   refreshDraftBanner();
-  showToast('Commande mise en attente', 'ok');
+  showToast(t('draft.held_toast'), 'ok');
 }
 
 function resumeDraft() {
@@ -280,7 +317,7 @@ function resumeDraft() {
 function discardDraft() {
   localStorage.removeItem(DRAFT_KEY);
   refreshDraftBanner();
-  showToast('Commande en attente supprimée', 'ok');
+  showToast(t('draft.discarded_toast'), 'ok');
 }
 
 function refreshDraftBanner() {
@@ -363,7 +400,7 @@ function renderGrillWidget() {
   const container = document.getElementById('grill-widget-content');
   const dash = firstDashboard();
   if (!dash) {
-    container.innerHTML = '<span style="color:#888;font-size:.8rem">Chargement…</span>';
+    container.innerHTML = `<span style="color:#888;font-size:.8rem">${t('grill.loading')}</span>`;
     return;
   }
   const { tracks, track_labels, demand, gauges } = dash;
@@ -385,12 +422,15 @@ function renderGrillFull() {
   const container = document.getElementById('grill-content');
   const dash = firstDashboard();
   if (!dash) {
-    container.innerHTML = '<p style="padding:16px;color:#888">Chargement…</p>';
+    container.innerHTML = `<p style="padding:16px;color:#888">${t('grill.loading')}</p>`;
     loadGrillState();
     return;
   }
   const { tracks, track_labels, demand, gauges, stock, stock_buckets, window_minutes } = dash;
-  const GAUGE_LABELS = ['Att.', '+½ doz.', '+1 doz.', '+2 doz.', 'Urgence!'];
+  const GAUGE_LABELS = [
+    t('grill.gauge.idle'), t('grill.gauge.half'),
+    t('grill.gauge.one'),  t('grill.gauge.two'), t('grill.gauge.urgent'),
+  ];
 
   container.innerHTML = tracks.map(tr => {
     const d = demand?.[tr] ?? 0;
@@ -407,10 +447,10 @@ function renderGrillFull() {
     ).join('');
     return `<div class="grill-meat-block">
       <div class="grill-meat-title">${label}</div>
-      <div class="grill-demand-line">Demande (${window_minutes} min) : <strong>${d} pièces</strong></div>
+      <div class="grill-demand-line">${t('grill.demand', { minutes: window_minutes, pieces: d })}</div>
       <div class="gauge-row">${segments}</div>
       <div class="gauge-labels">${segLabels}</div>
-      <div class="stock-label">Stock réchaud :</div>
+      <div class="stock-label">${t('grill.stock_label')}</div>
       <div class="stock-buttons">${stockBtns}</div>
     </div>`;
   }).join('');
@@ -427,7 +467,7 @@ async function setStock(component, bucketIndex) {
     renderGrillWidget();
     renderGrillFull();
   } catch {
-    showToast('Erreur mise à jour stock', 'err');
+    showToast(t('grill.stock_update_error'), 'err');
   }
 }
 
@@ -456,7 +496,7 @@ function refreshCommandesScreen() {
 
   const list = document.getElementById('commandes-list');
   if (filtered.length === 0) {
-    list.innerHTML = '<p class="empty-msg">Aucune commande</p>';
+    list.innerHTML = `<p class="empty-msg">${t('commandes.empty')}</p>`;
     return;
   }
   const labelById = Object.fromEntries(menuItems.map(i => [i.id, i.label.replace('\n', ' ')]));
@@ -494,19 +534,19 @@ function renderOrderCard(o, labelById) {
   if (o.status === 'en_preparation') {
     const delaysRow = showCountdown ? `
       <div class="cmd-delays">
-        <button class="btn-delay" onclick="delayOrder(${o.id},60)">+1 min</button>
-        <button class="btn-delay" onclick="delayOrder(${o.id},150)">+2½ min</button>
-        <button class="btn-delay" onclick="delayOrder(${o.id},300)">+5 min</button>
+        <button class="btn-delay" onclick="delayOrder(${o.id},60)">${t('commandes.delay_1')}</button>
+        <button class="btn-delay" onclick="delayOrder(${o.id},150)">${t('commandes.delay_2_5')}</button>
+        <button class="btn-delay" onclick="delayOrder(${o.id},300)">${t('commandes.delay_5')}</button>
       </div>` : '';
     actions = `${delaysRow}
       <div class="cmd-actions">
-        <button class="btn-deliver" onclick="deliverOrder(${o.id})">Livrer</button>
-        <button class="btn-reprint-mini" onclick="reprintOrder(${o.id}, this)">🖨</button>
-        <button class="btn-cancel-order" onclick="confirmCancelOrder(${o.id}, ${o.number})">Annuler</button>
+        <button class="btn-deliver" onclick="deliverOrder(${o.id})">${t('commandes.deliver')}</button>
+        <button class="btn-reprint-mini" onclick="reprintOrder(${o.id}, this)">${t('commandes.reprint')}</button>
+        <button class="btn-cancel-order" onclick="confirmCancelOrder(${o.id}, ${o.number})">${t('commandes.cancel')}</button>
       </div>`;
   } else {
     actions = `<div class="cmd-actions">
-      <button class="btn-reprint-mini" onclick="reprintOrder(${o.id}, this)">🖨 Réimprimer</button>
+      <button class="btn-reprint-mini" onclick="reprintOrder(${o.id}, this)">${t('commandes.reprint_long')}</button>
     </div>`;
   }
 
@@ -553,11 +593,11 @@ function updateCountdowns() {
     const target = Number(el.dataset.target);
     const diff = target - now;
     if (diff <= 0) {
-      el.textContent = 'Livraison auto imminente';
+      el.textContent = t('commandes.auto_imminent');
     } else {
       const mins = Math.floor(diff / 60000);
       const secs = Math.floor((diff % 60000) / 1000);
-      el.textContent = `Auto dans ${mins}:${String(secs).padStart(2, '0')}`;
+      el.textContent = t('commandes.auto_in', { time: `${mins}:${String(secs).padStart(2, '0')}` });
     }
   });
 }
@@ -582,7 +622,7 @@ async function patchStatus(id, status) {
     });
     if (!res.ok) throw new Error();
   } catch {
-    showToast('Erreur mise à jour statut', 'err');
+    showToast(t('commandes.status_update_error'), 'err');
   }
 }
 
@@ -595,15 +635,17 @@ async function delayOrder(id, seconds) {
     });
     if (!res.ok) throw new Error();
   } catch {
-    showToast('Erreur ajustement délai', 'err');
+    showToast(t('commandes.delay_error'), 'err');
   }
 }
 
 let _pendingCancelOrderId = null;
 function confirmCancelOrder(id, number) {
   _pendingCancelOrderId = id;
-  document.getElementById('modal-cancel-order-number').textContent =
-    '#' + String(number).padStart(3, '0');
+  const padded = '#' + String(number).padStart(3, '0');
+  // Rebuild the modal sentence with the number injected at the correct place.
+  const target = document.getElementById('modal-cancel-order-text');
+  target.innerHTML = t('modal.cancel_order', { num: `<strong>${padded}</strong>` });
   document.getElementById('modal-cancel-order-confirm').onclick = async () => {
     closeModal();
     if (_pendingCancelOrderId) {
@@ -637,7 +679,7 @@ async function reprintOrder(orderId, btn) {
 // ── Stats ──────────────────────────────────────────────────────────────────────
 async function loadStats() {
   const container = document.getElementById('stats-content');
-  container.innerHTML = '<p style="color:#888;padding:8px">Chargement…</p>';
+  container.innerHTML = `<p style="color:#888;padding:8px">${t('stats.loading')}</p>`;
   try {
     const res = await fetch('/api/stats');
     const stats = await res.json();
@@ -652,17 +694,17 @@ async function loadStats() {
     const sc = stats.status_counts || {};
     const statusBlock = `
       <div class="stats-card">
-        <h2>Par statut</h2>
+        <h2>${t('stats.by_status')}</h2>
         <table class="stats-table">
-          <tr><th>Statut</th><th>Nombre</th></tr>
-          <tr><td>En préparation</td><td>${sc.en_preparation || 0}</td></tr>
-          <tr><td>Livrées</td><td>${sc.livre || 0}</td></tr>
-          <tr><td>Annulées</td><td>${sc.annule || 0}</td></tr>
+          <tr><th>${t('stats.status')}</th><th>${t('stats.count')}</th></tr>
+          <tr><td>${t('stats.status_en_preparation')}</td><td>${sc.en_preparation || 0}</td></tr>
+          <tr><td>${t('stats.status_livre')}</td><td>${sc.livre || 0}</td></tr>
+          <tr><td>${t('stats.status_annule')}</td><td>${sc.annule || 0}</td></tr>
         </table>
       </div>`;
 
     const histo = stats.histogram || [];
-    let histoHtml = '<p style="color:#888;font-size:.85rem">Aucune donnée</p>';
+    let histoHtml = `<p style="color:#888;font-size:.85rem">${t('stats.no_data')}</p>`;
     if (histo.length > 0) {
       const maxCount = Math.max(...histo.map(h => h.count), 1);
       const bars = histo.map(h => {
@@ -676,30 +718,30 @@ async function loadStats() {
 
     container.innerHTML = `
       <div class="stats-card">
-        <h2>Total commandes</h2>
+        <h2>${t('stats.total')}</h2>
         <div class="stats-total">${stats.total_orders}</div>
       </div>
       ${statusBlock}
       <div class="stats-card">
-        <h2>Par article (hors annulées)</h2>
+        <h2>${t('stats.by_item')}</h2>
         <table class="stats-table">
-          <tr><th>Article</th><th>Quantité</th></tr>
+          <tr><th>${t('stats.item')}</th><th>${t('stats.qty')}</th></tr>
           ${menuRows}
         </table>
       </div>
       <div class="stats-card">
-        <h2>Composants (hors annulées)</h2>
+        <h2>${t('stats.components')}</h2>
         <table class="stats-table">
-          <tr><th>Composant</th><th>Total</th></tr>
+          <tr><th>${t('stats.component')}</th><th>${t('stats.total_col')}</th></tr>
           ${compRows}
         </table>
       </div>
       <div class="stats-card">
-        <h2>Activité (tranches de 10 min)</h2>
+        <h2>${t('stats.activity')}</h2>
         ${histoHtml}
       </div>`;
   } catch {
-    container.innerHTML = '<p style="color:#e74c3c;padding:8px">Erreur de chargement</p>';
+    container.innerHTML = `<p style="color:#e74c3c;padding:8px">${t('stats.error')}</p>`;
   }
 }
 
@@ -721,20 +763,27 @@ async function loadSettings() {
     document.getElementById('printer-settings-list').innerHTML = printers.map((p, i) => {
       const s = p.status || {};
       const badgeClass = s.connected ? (s.paper_ok ? 'ok' : 'err') : 'err';
-      const badgeText = s.connected ? (s.paper_ok ? '✓ OK' : '⚠️ Papier') : '✗ Déconnectée';
+      const badgeText = s.connected ? (s.paper_ok ? t('printer.ok') : t('printer.paper'))
+                                    : t('printer.disconnected');
       return `<div class="printer-card"${i > 0 ? ' style="margin-top:12px"' : ''}>
         <strong>${p.label || p.id}</strong>
         <span class="printer-badge ${badgeClass}">${badgeText}</span>
-        <button onclick="testPrinter('${p.id}')" class="btn-test">Test</button>
+        <button onclick="testPrinter('${p.id}')" class="btn-test">${t('settings.printer_test')}</button>
       </div>
       <div class="printer-device-row">
-        <label>Périphérique :
+        <label><span>${t('settings.printer_device')}</span>
           <input type="text" id="input-printer-device-${p.id}" class="input-field"
                  style="width:180px" placeholder="/dev/ttyACM0 ou 04b8:0e15"
                  value="${p.device || ''}">
         </label>
       </div>`;
     }).join('');
+
+    // Language selector
+    const langSel = document.getElementById('input-ui-lang');
+    langSel.innerHTML = (i18n.available || ['fr', 'en']).map(code =>
+      `<option value="${code}"${(config.ui_lang || 'fr') === code ? ' selected' : ''}>${code.toUpperCase()}</option>`
+    ).join('');
 
     document.getElementById('input-grill-window').value = config.grill_window_minutes;
     document.getElementById('input-grill-segment').value = config.grill_segment_size;
@@ -755,13 +804,20 @@ async function loadSettings() {
   } catch {}
 }
 
+async function saveLanguage() {
+  const lang = document.getElementById('input-ui-lang').value;
+  await saveConfigFields({ ui_lang: lang });
+  showToast(t('settings.language_saved'), 'ok');
+  setTimeout(() => location.reload(), 800);
+}
+
 async function saveIdentity() {
   const org = document.getElementById('input-org-name').value.trim();
   const evt = document.getElementById('input-event-name').value.trim();
   await saveConfigFields({ org_name: org, event_name: evt });
   const parts = [org, evt].filter(Boolean);
   document.getElementById('event-name').textContent = parts.join(' — ');
-  showToast('Identité enregistrée', 'ok');
+  showToast(t('settings.identity_saved'), 'ok');
 }
 
 async function savePrinterDevices() {
@@ -771,15 +827,15 @@ async function savePrinterDevices() {
     devices[id] = el.value.trim();
   });
   await saveConfigFields({ printer_devices: devices });
-  showToast('Périphériques enregistrés', 'ok');
+  showToast(t('settings.printers_saved'), 'ok');
   await loadSettings();
 }
 
 async function saveNextOrder() {
   const val = parseInt(document.getElementById('input-next-order').value);
-  if (isNaN(val) || val < 1) { showToast('Numéro invalide', 'err'); return; }
+  if (isNaN(val) || val < 1) { showToast(t('settings.invalid_number'), 'err'); return; }
   await saveConfigFields({ next_order_number: val });
-  showToast('Numéro enregistré', 'ok');
+  showToast(t('settings.number_saved'), 'ok');
 }
 
 async function saveGrillParams() {
@@ -787,27 +843,27 @@ async function saveGrillParams() {
   const s = parseInt(document.getElementById('input-grill-segment').value);
   const th = parseInt(document.getElementById('input-grill-threshold').value);
   if (isNaN(w) || w < 1 || isNaN(s) || s < 1 || isNaN(th) || th < 0) {
-    showToast('Valeurs invalides', 'err'); return;
+    showToast(t('settings.invalid_values'), 'err'); return;
   }
   await saveConfigFields({
     grill_window_minutes: w,
     grill_segment_size: s,
     grill_demand_threshold: th,
   });
-  showToast('Paramètres enregistrés', 'ok');
+  showToast(t('settings.params_saved'), 'ok');
 }
 
 async function saveAutoDelivery() {
   const enabled = document.getElementById('input-auto-delivery-enabled').checked;
   const minutes = parseFloat(document.getElementById('input-auto-delivery-minutes').value);
   if (isNaN(minutes) || minutes <= 0) {
-    showToast('Délai invalide', 'err'); return;
+    showToast(t('settings.invalid_delay'), 'err'); return;
   }
   await saveConfigFields({
     auto_delivery_enabled: enabled,
     auto_delivery_minutes: minutes,
   });
-  showToast('Livraison auto enregistrée', 'ok');
+  showToast(t('settings.auto_delivery_saved'), 'ok');
   loadOrders();
 }
 
@@ -819,7 +875,7 @@ async function saveColors() {
   });
   await saveConfigFields({ button_colors: colors });
   await loadMenu();
-  showToast('Couleurs enregistrées', 'ok');
+  showToast(t('settings.colors_saved'), 'ok');
 }
 
 async function saveConfigFields(updates) {
@@ -831,7 +887,7 @@ async function saveConfigFields(updates) {
     });
     config = await res.json();
   } catch {
-    showToast('Erreur de sauvegarde', 'err');
+    showToast(t('settings.save_error'), 'err');
   }
 }
 
@@ -843,10 +899,10 @@ async function testPrinter(id) {
       body: JSON.stringify({ printer: id }),
     });
     const data = await res.json();
-    if (data[id] === 'ok') showToast(`${id} : test OK`, 'ok');
-    else showToast(`${id} : ${data[id]}`, 'err');
+    if (data[id] === 'ok') showToast(t('settings.printer_test_ok', { id }), 'ok');
+    else showToast(t('settings.printer_test_fail', { id, error: data[id] }), 'err');
   } catch {
-    showToast('Erreur réseau', 'err');
+    showToast(t('common.network_error'), 'err');
   }
 }
 
@@ -862,7 +918,7 @@ async function doReset() {
       headers: { 'X-Confirm-Reset': 'yes' },
     });
     if (res.ok) {
-      showToast('Reset effectué', 'ok');
+      showToast(t('settings.reset_done'), 'ok');
       currentOrder = {};
       updateOrderUI();
       orders = [];
@@ -870,10 +926,10 @@ async function doReset() {
       refreshNavBadge();
       await loadConfig();
     } else {
-      showToast('Erreur lors du reset', 'err');
+      showToast(t('settings.reset_error'), 'err');
     }
   } catch {
-    showToast('Erreur réseau', 'err');
+    showToast(t('common.network_error'), 'err');
   }
 }
 

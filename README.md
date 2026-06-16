@@ -15,6 +15,7 @@ Open-source point-of-sale and kitchen display system for school fairs — tablet
 - **Live updates** — WebSocket push to all connected tablets on every state change
 - **Stats** — per-item totals, status breakdown, time histogram, reprint
 - **Self-contained** — runs entirely offline; built-in WiFi hotspot turns the Pi into its own network
+- **Bilingual UI** — French / English, switchable from Settings
 - **Fully configurable** — menu, workshops, printers and ticket templates defined in `menu.yaml`; no code change needed to adapt to a new event layout
 
 ---
@@ -132,6 +133,7 @@ Defaults ship inside the package (`openkds/defaults/config.json`). When the user
 | `auto_delivery_enabled` | `true` to auto-mark orders as delivered after the delay below |
 | `auto_delivery_minutes` | Delay before auto-delivery (minutes, fractions allowed e.g. `2.5`) |
 | `grill_demand_threshold` | Minimum raw demand under which the grill gauges stay at rest (default 3) |
+| `ui_lang` | Web UI language — `"fr"` or `"en"` (also switchable from Settings) |
 
 > Run `lsusb` with printers connected to find their USB IDs (`VVVV:PPPP`). Enter them in Settings → Printers.
 
@@ -205,6 +207,12 @@ Example:
 ```
 
 > **Note:** changing the menu or workshops requires a database reset (the schema ties orders to item IDs).
+
+### Languages
+
+The web UI ships in French and English. Pick yours from **Settings → Language**.
+
+To add another language: drop a new JSON file in `openkds/locales/` (e.g. `es.json`) using the same keys as `fr.json` and add the code to `_AVAILABLE_LANGS` in `openkds/main.py`. No frontend change needed.
 
 ### Favicon
 

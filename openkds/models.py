@@ -49,3 +49,4 @@ class ConfigUpdate(BaseModel):
     event_name: Optional[str] = None
     auto_delivery_enabled: Optional[bool] = None
     auto_delivery_minutes: Optional[float] = None
+    ui_lang: Optional[str] = None
