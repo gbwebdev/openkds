@@ -15,6 +15,8 @@ _VALID_STATUSES = ("en_preparation", "livre", "annule")
 
 def init_db():
     with get_connection() as conn:
+        # Step 1 — create tables. Use IF NOT EXISTS so this is idempotent and
+        # leaves pre-existing tables untouched (their columns may be missing).
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS orders (
                 id                     INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,8 +29,6 @@ def init_db():
                 delivery_delay_seconds INTEGER NOT NULL DEFAULT 0
             );
 
-            CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
-
             CREATE TABLE IF NOT EXISTS grill_stock (
                 id         INTEGER PRIMARY KEY CHECK (id = 1),
                 stock      TEXT NOT NULL DEFAULT '{}',
@@ -38,12 +38,15 @@ def init_db():
             INSERT OR IGNORE INTO grill_stock (id, stock, updated_at)
             VALUES (1, '{}', datetime('now'));
         """)
-        # Defensive: add new columns if the table predates this schema.
+        # Step 2 — add columns missing from pre-existing tables. Must happen
+        # BEFORE creating indexes that reference those columns.
         _ensure_column(conn, "orders", "status",
                        "TEXT NOT NULL DEFAULT 'en_preparation'")
         _ensure_column(conn, "orders", "delivered_at", "TEXT")
         _ensure_column(conn, "orders", "delivery_delay_seconds",
                        "INTEGER NOT NULL DEFAULT 0")
+        # Step 3 — create indexes once we know the columns exist.
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
 
 
 def _ensure_column(conn, table: str, name: str, definition: str) -> None:
