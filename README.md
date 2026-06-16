@@ -90,6 +90,27 @@ USB printer devices must be passed through with `--device`.
 
 ---
 
+## Updates
+
+### Bare-metal
+
+From the directory where you originally cloned the repo:
+
+```bash
+sudo bash update.sh
+```
+
+The script pulls the latest code, syncs to `/opt/openkds` (preserving `data/`, `venv/` and the database), reinstalls the Python package in the venv, and restarts the `openkds` service.
+
+### Docker
+
+```bash
+docker pull ghcr.io/gbwebdev/openkds:latest
+docker restart openkds
+```
+
+---
+
 ## Configuration
 
 ### Runtime settings — `config.json`
