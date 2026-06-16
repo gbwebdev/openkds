@@ -100,6 +100,16 @@ async def serve_index():
     return HTMLResponse((FRONTEND_DIR / "index.html").read_text(encoding="utf-8"))
 
 
+@app.get("/favicon.ico")
+async def favicon():
+    """Browsers may request /favicon.ico directly outside /static/."""
+    from fastapi.responses import FileResponse, Response
+    f = FRONTEND_DIR / "favicon.ico"
+    if f.exists():
+        return FileResponse(f)
+    return Response(status_code=404)
+
+
 # ── WebSocket ─────────────────────────────────────────────────────────────────
 
 @app.websocket("/ws")
