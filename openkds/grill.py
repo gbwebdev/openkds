@@ -8,11 +8,15 @@ from .menu import get_menu_items, get_dashboard_workshops, get_stock_buckets
 
 
 def compute_demand(window_minutes: int) -> dict:
-    """Sum component demand from orders within the time window."""
+    """Sum component demand from in-preparation orders within the time window.
+
+    Delivered and cancelled orders no longer represent things to cook, so they
+    don't contribute to demand.
+    """
     cutoff = (datetime.now() - timedelta(minutes=window_minutes)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
-    orders = database.get_orders_since(cutoff)
+    orders = database.get_orders_since(cutoff, status="en_preparation")
     items_map = {i["id"]: i for i in get_menu_items()}
 
     demand: dict[str, int] = {}

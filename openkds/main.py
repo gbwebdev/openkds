@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Header
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -10,14 +13,20 @@ from pathlib import Path
 
 from .config import load_config, save_config, update_config
 from .database import (
-    init_db, insert_order, get_order_by_id, get_all_orders,
-    delete_all_orders, update_grill_stock, get_stats,
+    init_db, insert_order, get_order_by_id, get_all_orders, get_orders_by_status,
+    set_order_status, add_order_delay, delete_all_orders, update_grill_stock, get_stats,
 )
-from .models import OrderCreate, GrillStockUpdate, PrinterTestRequest, ConfigUpdate
+from .models import (
+    OrderCreate, OrderStatusUpdate, OrderDelayUpdate, OrderStatus,
+    GrillStockUpdate, PrinterTestRequest, ConfigUpdate,
+)
 from .grill import get_grill_state
 from .menu import get_menu_items, get_workshops, get_ticket_workshops, get_printers, compute_order_components
 from .printers import try_get_printer, print_with_status
 from .renderer import render_ticket, print_test_ticket
+
+logger = logging.getLogger(__name__)
+AUTO_DELIVERY_TICK_SECONDS = 30
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 
@@ -49,12 +58,20 @@ def _device_for(printer_id: str, config: dict) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    yield
-    for p in _printer_cache.values():
+    auto_task = asyncio.create_task(_auto_delivery_loop())
+    try:
+        yield
+    finally:
+        auto_task.cancel()
         try:
-            p.close()
-        except Exception:
+            await auto_task
+        except asyncio.CancelledError:
             pass
+        for p in _printer_cache.values():
+            try:
+                p.close()
+            except Exception:
+                pass
 
 
 app = FastAPI(title="OpenKDS", lifespan=lifespan)
@@ -228,7 +245,11 @@ async def create_order(order_data: OrderCreate):
     printer_results = _print_order(order, config)
 
     grill_state = get_grill_state(config)
-    await broadcast({"type": "order_created", "grill": grill_state})
+    await broadcast({
+        "type": "order_created",
+        "order": _enrich_order(order, config),
+        "grill": grill_state,
+    })
 
     all_ok = all(r["ok"] for r in printer_results.values())
     if not all_ok:
@@ -250,9 +271,58 @@ async def create_order(order_data: OrderCreate):
     return JSONResponse(content=response, status_code=200 if all_ok else 207)
 
 
+def _enrich_order(order: dict, config: dict) -> dict:
+    """Attach the computed auto-delivery target time (epoch seconds) to the order.
+
+    Returns None for auto_delivery_at when the order is not in_preparation or when
+    auto-delivery is disabled.
+    """
+    enriched = dict(order)
+    if order.get("status") != "en_preparation" or not config.get("auto_delivery_enabled"):
+        enriched["auto_delivery_at"] = None
+        return enriched
+    minutes = config.get("auto_delivery_minutes", 20)
+    delay = order.get("delivery_delay_seconds", 0)
+    created = datetime.fromisoformat(order["created_at"])
+    target = created + timedelta(seconds=minutes * 60 + delay)
+    enriched["auto_delivery_at"] = target.timestamp()
+    return enriched
+
+
 @app.get("/api/orders")
-async def list_orders():
-    return get_all_orders()
+async def list_orders(status: str | None = None):
+    config = load_config()
+    if status:
+        orders = get_orders_by_status(status)
+    else:
+        orders = get_all_orders()
+    return [_enrich_order(o, config) for o in orders]
+
+
+@app.patch("/api/orders/{order_id}/status")
+async def patch_order_status(order_id: int, payload: OrderStatusUpdate):
+    if get_order_by_id(order_id) is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    order = set_order_status(order_id, payload.status.value)
+    config = load_config()
+    enriched = _enrich_order(order, config)
+    await broadcast({"type": "order_status_changed", "order": enriched})
+    # Demand changes when an order leaves en_preparation
+    await broadcast({"type": "grill_updated", "grill": get_grill_state(config)})
+    return enriched
+
+
+@app.post("/api/orders/{order_id}/delay")
+async def push_order_delay(order_id: int, payload: OrderDelayUpdate):
+    order = get_order_by_id(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order["status"] != "en_preparation":
+        raise HTTPException(status_code=409, detail="Order is not in preparation")
+    order = add_order_delay(order_id, payload.additional_seconds)
+    enriched = _enrich_order(order, load_config())
+    await broadcast({"type": "order_status_changed", "order": enriched})
+    return enriched
 
 
 @app.post("/api/orders/{order_id}/reprint")
@@ -347,6 +417,41 @@ async def printers_test(data: PrinterTestRequest):
             _invalidate_printer(device)
         results[pid] = "ok" if r["ok"] else (r["error"] or "error")
     return results
+
+
+async def _auto_delivery_loop():
+    """Periodically mark in-preparation orders as delivered once their target time passes.
+
+    Runs every AUTO_DELIVERY_TICK_SECONDS. Cheap when there are few orders.
+    No-ops when auto_delivery_enabled is False in config.
+    """
+    while True:
+        try:
+            await asyncio.sleep(AUTO_DELIVERY_TICK_SECONDS)
+            config = load_config()
+            if not config.get("auto_delivery_enabled"):
+                continue
+            minutes = config.get("auto_delivery_minutes", 20)
+            now_ts = datetime.now().timestamp()
+            delivered_any = False
+            for order in get_orders_by_status("en_preparation"):
+                created = datetime.fromisoformat(order["created_at"])
+                target = created + timedelta(seconds=minutes * 60 + order.get("delivery_delay_seconds", 0))
+                if now_ts >= target.timestamp():
+                    updated = set_order_status(order["id"], "livre")
+                    if updated:
+                        await broadcast({
+                            "type": "order_status_changed",
+                            "order": _enrich_order(updated, config),
+                            "auto": True,
+                        })
+                        delivered_any = True
+            if delivered_any:
+                await broadcast({"type": "grill_updated", "grill": get_grill_state(config)})
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("auto-delivery loop iteration failed")
 
 
 def main():

@@ -25,6 +25,18 @@
 
 - Changement de menu ou d'ateliers = reset DB obligatoire (schéma lié aux IDs des items).
 - Pas de migrations : reset propre assumé et documenté.
+- Schéma `orders` : `id`, `number`, `created_at`, `items` (JSON), `status`, `delivered_at`, `delivery_delay_seconds`.
+
+## États des commandes
+
+- 3 valeurs possibles : `en_preparation` (par défaut), `livre`, `annule`.
+- Synchronisées entre `database._VALID_STATUSES` (CHECK SQLite + use), `models.OrderStatus` (Enum Python),
+  et CSS `.status-en_preparation` / `.status-livre` / `.status-annule`.
+- Toute modification de statut → broadcast WS `order_status_changed` + recalcul demande grillade
+  (qui ne compte que les `en_preparation`).
+- Auto-livraison : boucle asyncio dans le lifespan FastAPI, vérifie chaque
+  `AUTO_DELIVERY_TICK_SECONDS` (30s par défaut). Désactivable via `auto_delivery_enabled`.
+- Pas de décrément automatique du stock grillade — toujours manuel.
 
 ## Imprimantes
 
