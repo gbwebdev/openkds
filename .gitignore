@@ -5,12 +5,19 @@ __pycache__/
 venv/
 .venv/
 
-# Base de données (générée au runtime)
-bazaar.db
+# Build artifacts
+*.egg-info/
+build/
+dist/
 
-# Config locale (peut contenir vendor_id/product_id sensibles)
-# Décommenter si nécessaire :
-# config.json
+# Runtime data (generated at startup or by the UI)
+*.db
+/config.json
+/data/
+
+# Branding sources (only the SVG vector source is versioned)
+/logo.png
+/logo_ink.svg
 
 # OS
 .DS_Store
