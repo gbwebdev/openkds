@@ -6,11 +6,13 @@ Open-source point-of-sale and kitchen display system for school fairs — tablet
 
 ## Features
 
-- **Order entry** — touch-friendly menu buttons on a tablet, real-time order summary
+- **Order entry** — touch-friendly menu buttons on a tablet, real-time order summary, draft hold-and-resume
+- **Order lifecycle** — In preparation → Delivered (manual or auto after a configurable delay) / Cancelled; dedicated **Commandes** screen with tabs
+- **Delivery mode** — open `?mode=delivery` on a second tablet for a fullscreen order-tracking view
 - **Thermal printing** — any number of printers, each assigned to one or more workshops via `menu.yaml`
-- **Grill management** — sliding-window demand forecast with a 4-segment gauge per tracked component
-- **Live updates** — WebSocket push to all connected tablets on every new order
-- **History & stats** — full order log with reprint, per-item totals, time histogram
+- **Grill management** — sliding-window demand forecast with a 4-segment gauge per tracked component (only in-preparation orders count)
+- **Live updates** — WebSocket push to all connected tablets on every state change
+- **Stats** — per-item totals, status breakdown, time histogram, reprint
 - **Self-contained** — runs entirely offline; built-in WiFi hotspot turns the Pi into its own network
 - **Fully configurable** — menu, workshops, printers and ticket templates defined in `menu.yaml`; no code change needed to adapt to a new event layout
 
@@ -126,6 +128,8 @@ Defaults ship inside the package (`openkds/defaults/config.json`). When the user
 | `grill_segment_size` | Units per gauge segment (default: 6) |
 | `button_colors` | Hex color overrides per menu item ID |
 | `next_order_number` | Resume counter after a break |
+| `auto_delivery_enabled` | `true` to auto-mark orders as delivered after the delay below |
+| `auto_delivery_minutes` | Delay before auto-delivery (minutes, fractions allowed e.g. `2.5`) |
 
 > Run `lsusb` with printers connected to find their USB IDs (`VVVV:PPPP`). Enter them in Settings → Printers.
 

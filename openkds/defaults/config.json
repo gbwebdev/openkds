@@ -5,5 +5,7 @@
   "printer_devices": {},
   "button_colors": {},
   "org_name": "",
-  "event_name": ""
+  "event_name": "",
+  "auto_delivery_enabled": false,
+  "auto_delivery_minutes": 20
 }

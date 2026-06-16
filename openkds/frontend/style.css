@@ -621,3 +621,222 @@ html, body {
   from { opacity: 0; transform: translate(-50%, 12px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
+
+/* ── Draft banner ────────────────────────────────────────────────────────── */
+.draft-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--yellow);
+  color: #1a1a2e;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+.draft-banner .btn-resume,
+.draft-banner .btn-discard {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-left: 6px;
+}
+.draft-banner .btn-resume { background: #1a1a2e; color: #f1c40f; }
+.draft-banner .btn-discard { background: rgba(0,0,0,.15); color: #1a1a2e; }
+.draft-banner .btn-resume:hover { background: #0f3460; }
+.draft-banner .btn-discard:hover { background: rgba(0,0,0,.25); }
+
+/* ── EN ATTENTE button ───────────────────────────────────────────────────── */
+.btn-hold {
+  background: var(--yellow);
+  color: #1a1a2e;
+  border: none;
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: filter .15s;
+}
+.btn-hold:disabled { opacity: .4; cursor: not-allowed; }
+.btn-hold:not(:disabled):hover { filter: brightness(1.1); }
+
+/* ── Nav / tab badges ────────────────────────────────────────────────────── */
+.nav-badge,
+.tab-badge {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 11px;
+  background: var(--accent);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+  margin-left: 4px;
+}
+.tab-badge { background: var(--surface2); color: var(--text-muted); }
+.cmd-tab.active .tab-badge { background: var(--accent); color: white; }
+
+/* ── Checkbox label ──────────────────────────────────────────────────────── */
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+/* ── Commandes screen ────────────────────────────────────────────────────── */
+.cmd-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.cmd-tab {
+  padding: 12px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.cmd-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.cmd-tab:hover { color: var(--text); }
+
+.commandes-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+.commandes-list .empty-msg {
+  grid-column: 1 / -1;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.cmd-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 4px solid var(--surface2);
+}
+.cmd-card.status-en_preparation { border-left-color: var(--orange); }
+.cmd-card.status-livre { border-left-color: var(--green); }
+.cmd-card.status-annule { border-left-color: var(--red); opacity: .65; }
+.cmd-card.imminent { border-left-color: var(--yellow); box-shadow: 0 0 12px rgba(241,196,15,.3); }
+.cmd-card.overdue { border-left-color: var(--red); }
+
+.cmd-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.cmd-num {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+.cmd-time {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.cmd-items {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.cmd-items li { list-style: none; }
+.cmd-items .qty { font-weight: 700; color: var(--accent); margin-right: 4px; }
+
+.cmd-progress {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.cmd-progress-bar {
+  height: 100%;
+  background: var(--orange);
+  width: 0%;
+  transition: width .5s linear, background .3s;
+}
+.cmd-card.imminent .cmd-progress-bar { background: var(--yellow); }
+.cmd-card.overdue .cmd-progress-bar { background: var(--red); }
+
+.cmd-countdown {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cmd-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.cmd-actions button {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cmd-actions button:hover { filter: brightness(1.15); }
+.cmd-actions .btn-deliver { background: var(--green); border-color: var(--green); color: #1a1a2e; }
+.cmd-actions .btn-cancel-order { background: var(--red); border-color: var(--red); color: white; }
+.cmd-actions .btn-reprint-mini { background: transparent; }
+.cmd-actions .btn-delay { background: var(--surface); }
+
+/* ── Delivery mode (URL ?mode=delivery) — fullscreen Commandes ──────────── */
+body.mode-delivery #screen-main,
+body.mode-delivery #screen-grill,
+body.mode-delivery #screen-stats,
+body.mode-delivery #screen-settings {
+  display: none !important;
+}
+body.mode-delivery #screen-commandes {
+  display: flex;
+}
+body.mode-delivery .commandes-list {
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+  padding: 20px;
+}
+body.mode-delivery .cmd-card { padding: 16px 18px; }
+body.mode-delivery .cmd-num { font-size: 1.8rem; }
+body.mode-delivery .cmd-actions button { padding: 12px 8px; font-size: 0.95rem; }
+body.mode-delivery .back-btn { display: none; }
+
