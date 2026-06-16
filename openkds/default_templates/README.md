@@ -22,7 +22,11 @@ workshops:
 
 ## Directives
 
-Directives appear at the **start of a line**, before any text. Multiple directives can be chained on the same line.
+Directives can appear **anywhere on a line** — at the start, between text, or at the end. They are recognised inline.
+
+```jinja2
+[reverse][center]TITLE[/reverse]   {# all three directives apply inline, TITLE is reversed #}
+```
 
 ### Alignment
 
@@ -55,9 +59,23 @@ Directives appear at the **start of a line**, before any text. Multiple directiv
 
 | Directive | Effect |
 |-----------|--------|
-| `[sep]` | Print a `================================` separator (32 `=`, normal size, left) |
-| `[sep-]` | Print a `--------------------------------` separator (32 `-`, normal size, left) |
+| `[sep]` | Print a full-width separator made of `=` (48 chars, normal size, left) |
+| `[sep-]` | Print a full-width separator made of `-` (48 chars, normal size, left) |
+| `[br]` | Print a normal-size blank line |
 | `[cut]` | Feed paper and cut — **required at the end of every template** |
+
+### Blank lines
+
+An **empty line in the template prints a blank line on the ticket** at the current text size. Use `[br]` for a normal-size blank line regardless of current state (useful after `[huge]` to avoid a giant gap).
+
+```jinja2
+Line 1
+
+Line 3 (preceded by a blank line at current size)
+
+[normal][br]
+Line 4 (small fixed-size gap above)
+```
 
 ## Charset and line width
 
@@ -70,7 +88,7 @@ Common French characters (`é è à ù â ê î ô û ç`) are supported.
 | `[big]` | ~24 |
 | `[huge]` | ~16 |
 
-Exact width depends on your printer model (58mm vs 80mm paper roll).
+Exact width depends on your printer model (58mm vs 80mm paper roll). The default line width is **48 columns** (80mm thermal paper with Font A). If you use 58mm paper, override the templates and use 32 columns instead.
 
 ## Jinja2 context
 
@@ -106,7 +124,7 @@ Every template receives the following variables:
 ## Tips
 
 - State directives (`[center]`, `[big]`, etc.) persist until changed — you don't need to repeat them on every line.
-- `[sep]` and `[sep-]` always print at normal size and left alignment, regardless of the current state.
-- An empty line in the template prints a blank line on the ticket (advances the paper).
+- A line containing only state directives produces no newline; it just changes the formatting for what follows.
+- `[sep]`, `[sep-]` and `[br]` always print at normal size and left alignment, regardless of the current state.
 - Use `{# ... #}` for Jinja2 comments — they produce no output.
 - `[reverse]` blocks must be closed with `[/reverse]` before `[cut]`.

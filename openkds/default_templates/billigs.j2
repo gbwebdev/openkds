@@ -1,13 +1,14 @@
 {#
   OpenKDS — ticket billigs (stand galette-saucisse)
   Charset : cp437 | Largeur : 48 car. normal, 24 car. big
-  [reverse] / [/reverse] : impression fond noir / texte blanc
+  [reverse] / [/reverse] : impression fond noir / texte blanc (inline OK)
 #}
-[reverse][center][big]{{ " " * 48 }}
-      BILLIGS
-{{ " " * 48 }}[/reverse]
-[reverse][center]{{ " " * 48 }}[/reverse]
+[reverse][center][big]{{ " " * 24 }}[/reverse]
+[reverse][center][big]      BILLIGS      [/reverse]
+[reverse][center][big]{{ " " * 24 }}[/reverse]
+
 [center][huge]#{{ "%03d" % order.number }}
+
 [left][normal]
 {% for item in workshop_items %}{% for _ in range(item.qty) %}  [ ] {{ item.label | replace('\n', ' ') }}
 {% endfor %}{% endfor %}
