@@ -200,6 +200,21 @@ Example:
 
 > **Note:** changing the menu or workshops requires a database reset (the schema ties orders to item IDs).
 
+### Favicon
+
+The web UI references the standard favicon set (typically produced by [realfavicongenerator.net](https://realfavicongenerator.net/) or similar). Drop the generated files into `openkds/frontend/`:
+
+```
+openkds/frontend/
+├── favicon.ico
+├── favicon-16x16.png
+├── favicon-32x32.png
+├── apple-touch-icon.png
+└── site.webmanifest
+```
+
+If you serve the icons under a path other than `/static/`, edit the `<link>` tags in `openkds/frontend/index.html` accordingly.
+
 ---
 
 ## Local development
