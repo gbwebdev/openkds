@@ -115,7 +115,7 @@ docker restart openkds
 
 ### Runtime settings — `config.json`
 
-Written to the data directory on first start. All settings are also editable from the **Settings** screen in the UI.
+Defaults ship inside the package (`openkds/defaults/config.json`). When the user changes any setting from the **Settings** screen, the modified config is written to `OPENKDS_DATA_DIR/config.json` and overrides the defaults on next startup.
 
 | Key | Description |
 |---|---|
@@ -167,17 +167,20 @@ Adding a printer or a new workshop requires only a `menu.yaml` edit — no code 
 
 Jinja2 templates rendered as plain text. The package ships defaults for `client.j2`, `assembly.j2` and `billigs.j2`. Place custom templates in `OPENKDS_DATA_DIR/templates/` to override.
 
-**Available directives** (on their own line or at the start of a line):
+**Available directives** (recognised anywhere on a line, inline OK):
 
 | Directive | Effect |
 |---|---|
 | `[left]` `[center]` `[right]` | Text alignment |
 | `[normal]` `[big]` `[huge]` | Text size (1×, 2×, 3× height + 2× width) |
 | `[bold]` `[/bold]` | Bold on / off |
-| `[reverse]` `[/reverse]` | White-on-black printing |
+| `[reverse]` `[/reverse]` | White-on-black printing (inline OK) |
 | `[sep]` | Print `========` separator line |
 | `[sep-]` | Print `--------` separator line |
+| `[br]` | Print a normal-size blank line |
 | `[cut]` | Feed paper and cut (required at end of template) |
+
+An empty template line produces a blank line on the ticket. Use `[br]` for a normal-size blank line regardless of the current state. See `openkds/default_templates/README.md` for the full template authoring guide.
 
 **Template context variables:** `order`, `config`, `workshop`, `workshop_items`, `workshop_components`, `order_components`.
 
@@ -241,8 +244,9 @@ openkds/
 ├── renderer.py          # Jinja2 ticket renderer + directive interpreter
 ├── printers.py          # USB/serial printer abstraction
 ├── grill.py             # Demand and gauge logic
-├── config.py            # config.json read/write
+├── config.py            # config defaults / user overrides
 ├── defaults/
+│   ├── config.json      # Default runtime settings
 │   └── menu.yaml        # Default menu, printers, workshops, grill config
 ├── default_templates/
 │   ├── client.j2        # Customer receipt

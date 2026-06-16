@@ -107,8 +107,6 @@ step "Déploiement dans $INSTALL_DIR"
 
 mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/data"
 rsync -a --exclude='venv/' --exclude='*.db' --exclude='data/' "$SCRIPT_DIR/" "$INSTALL_DIR/"
-# Migrer config.json existant vers data/
-[ -f "$SCRIPT_DIR/config.json" ] && cp "$SCRIPT_DIR/config.json" "$INSTALL_DIR/data/config.json"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 info "Fichiers copiés"
 

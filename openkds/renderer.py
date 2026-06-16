@@ -6,18 +6,23 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, ChoiceLoader
 
 
-# Directive syntax: [name] at the start of a line (one or more, in sequence).
-# State directives  — change formatting for subsequent text lines:
+# Directive syntax: [name] inline. Directives are recognised anywhere on a line.
+#
+# State directives — change formatting for subsequent text:
 #   [left]  [center]  [right]
-#   [normal]  [big]  [huge]       (normal=1×1, big=2×2, huge=3×2)
+#   [normal]  [big]  [huge]       (normal = 1×1, big = 2×2, huge = 3×2)
 #   [bold]  [/bold]
 #   [reverse]  [/reverse]         (white-on-black via raw ESC/POS)
-# Immediate directives — produce output now and don't linger:
-#   [sep]   print === separator (32 chars, normal, left)
-#   [sep-]  print --- separator (32 chars, normal, left)
-#   [cut]   feed + cut (terminates processing)
+#
+# Output directives — emit something immediately:
+#   [sep]   print ===== separator (32 chars, normal size, left-aligned)
+#   [sep-]  print ----- separator (32 chars, normal size, left-aligned)
+#   [br]    print a normal-size blank line
+#   [cut]   feed + cut paper (terminates processing)
+#
+# Empty template lines produce blank lines in the output at the current size.
 
-_DIRECTIVE_RE = re.compile(r'^\[([a-zA-Z/\-]+)\]')
+_DIRECTIVE_RE = re.compile(r'\[([a-zA-Z/\-]+)\]')
 
 
 def _build_env() -> Environment:
@@ -48,14 +53,19 @@ def _get_env() -> Environment:
 
 
 _ALIGN = {"left": b"\x1b\x61\x00", "center": b"\x1b\x61\x01", "right": b"\x1b\x61\x02"}
+_FMT_NORMAL = b"\x1b\x61\x00\x1b\x45\x00\x1d\x21\x00"  # left, no bold, 1×1
+
+# Default line width for [sep]/[sep-] at normal size.
+# 48 columns matches 80mm thermal paper with Font A. For 58mm paper, set 32.
+_LINE_WIDTH = 48
 
 
 def _fmt(printer, align: str, bold: bool, height: int, width: int) -> None:
-    """Send formatting as raw ESC/POS bytes.
+    """Send align/bold/size as raw ESC/POS bytes.
 
-    Bypasses printer.set() which caps height/width at 2 in escpos v3,
-    causing SetVariableError for [huge] (height=3) and silently aborting
-    the print function before the cut command is ever reached.
+    Bypasses printer.set() which caps height/width at 2 in escpos v3 and would
+    raise SetVariableError on [huge] (height=3), aborting the print pipeline
+    before [cut] is ever reached.
     """
     printer._raw(_ALIGN.get(align, _ALIGN["left"]))           # ESC a n
     printer._raw(bytes([0x1b, 0x45, 1 if bold else 0]))       # ESC E n
@@ -63,83 +73,122 @@ def _fmt(printer, align: str, bold: bool, height: int, width: int) -> None:
     printer._raw(bytes([0x1d, 0x21, size_n]))                 # GS ! n
 
 
-_FMT_NORMAL = b"\x1b\x61\x00\x1b\x45\x00\x1d\x21\x00"  # left, no bold, 1×1
+# State-only directives that never produce output by themselves.
+_STATE_DIRECTIVES = {
+    "left", "center", "right",
+    "normal", "big", "huge",
+    "bold", "/bold",
+    "reverse", "/reverse",
+}
+
+
+def _flush(printer, buf: str, state: dict) -> None:
+    """Write the accumulated text buffer with the current formatting."""
+    if not buf:
+        return
+    _fmt(printer, state["align"], state["bold"], state["height"], state["width"])
+    printer.text(buf)
+
+
+def _apply_directive(printer, d: str, state: dict) -> bool:
+    """Apply a directive. Returns False if processing should stop ([cut])."""
+    if d == "cut":
+        _cut(printer)
+        return False
+    if d == "sep":
+        printer._raw(_FMT_NORMAL)
+        printer.text("=" * _LINE_WIDTH + "\n")
+    elif d == "sep-":
+        printer._raw(_FMT_NORMAL)
+        printer.text("-" * _LINE_WIDTH + "\n")
+    elif d == "br":
+        printer._raw(_FMT_NORMAL)
+        printer.text("\n")
+    elif d == "reverse":
+        printer._raw(b"\x1d\x42\x01")
+    elif d == "/reverse":
+        printer._raw(b"\x1d\x42\x00")
+    elif d == "left":
+        state["align"] = "left"
+    elif d == "center":
+        state["align"] = "center"
+    elif d == "right":
+        state["align"] = "right"
+    elif d == "normal":
+        state.update(align="left", bold=False, height=1, width=1)
+    elif d == "big":
+        state["height"] = 2
+        state["width"] = 2
+    elif d == "huge":
+        state["height"] = 3
+        state["width"] = 2
+    elif d == "bold":
+        state["bold"] = True
+    elif d == "/bold":
+        state["bold"] = False
+    return True
+
+
+def _process_line(printer, line: str, state: dict) -> bool:
+    """Process one rendered template line. Returns False if [cut] encountered."""
+    pending = ""
+    saw_output_directive = False  # sep, sep-, br — they emit their own newline
+    saw_only_state = True         # true while line has had nothing but state directives
+
+    i = 0
+    while i < len(line):
+        m = _DIRECTIVE_RE.match(line, i)
+        if not m:
+            pending += line[i]
+            saw_only_state = False
+            i += 1
+            continue
+
+        # A directive: flush pending text under the current formatting first
+        _flush(printer, pending, state)
+        pending = ""
+
+        d = m.group(1)
+        i = m.end()
+
+        if d not in _STATE_DIRECTIVES:
+            saw_only_state = False
+            if d in ("sep", "sep-", "br", "cut"):
+                saw_output_directive = True
+
+        if not _apply_directive(printer, d, state):
+            return False
+
+    # End-of-line handling:
+    if pending:
+        # Trailing text after directives → flush with newline
+        _flush(printer, pending + "\n", state)
+    elif not line:
+        # Empty template line → blank line on the ticket (current formatting)
+        _flush(printer, "\n", state)
+    elif saw_only_state:
+        # Line was nothing but state changes → no newline emitted
+        pass
+    elif saw_output_directive:
+        # sep/sep-/br already printed their own newline → no extra
+        pass
+    else:
+        # Inline-state-only line with text consumed mid-line — terminate it
+        printer.text("\n")
+    return True
 
 
 def _process(printer, rendered: str) -> None:
-    """Interpret rendered template text: directives + plain text lines."""
-    align = "left"
-    bold = False
-    height = 1
-    width = 1
-
+    state = {"align": "left", "bold": False, "height": 1, "width": 1}
     for raw_line in rendered.split("\n"):
-        line = raw_line
-
-        # Collect all leading directives on this line
-        directives: list[str] = []
-        while True:
-            m = _DIRECTIVE_RE.match(line)
-            if not m:
-                break
-            directives.append(m.group(1))
-            line = line[m.end():]
-
-        stop = False
-        for d in directives:
-            if d == "left":
-                align = "left"
-            elif d == "center":
-                align = "center"
-            elif d == "right":
-                align = "right"
-            elif d == "normal":
-                align, bold, height, width = "left", False, 1, 1
-            elif d == "big":
-                height, width = 2, 2
-            elif d == "huge":
-                height, width = 3, 2
-            elif d == "bold":
-                bold = True
-            elif d == "/bold":
-                bold = False
-            elif d == "reverse":
-                printer._raw(b"\x1d\x42\x01")
-            elif d == "/reverse":
-                printer._raw(b"\x1d\x42\x00")
-            elif d == "sep":
-                printer._raw(_FMT_NORMAL)
-                printer.text("=" * 32 + "\n")
-            elif d == "sep-":
-                printer._raw(_FMT_NORMAL)
-                printer.text("-" * 32 + "\n")
-            elif d == "cut":
-                _cut(printer)
-                stop = True
-                break
-
-        if stop:
+        if not _process_line(printer, raw_line, state):
             return
-
-        if line:
-            _fmt(printer, align, bold, height, width)
-            printer.text(line + "\n")
 
 
 def _cut(printer) -> None:
-    """Feed paper, cut, then flush any write buffer.
-
-    Uses printer.cut() (which sends GS V 0 = full cut without feed) — the
-    same call that worked in the pre-refactor codebase. The variant GS V A 0
-    (\\x1d\\x56\\x41\\x00) is not supported by all printers and silently
-    no-ops on some firmware revisions.
-    """
-    # Feed enough paper so the text isn't cut through
+    """Feed paper, cut, then flush any write buffer."""
     printer._raw(b"\n\n\n\n")
     printer.cut()
-    # Flush Python's write buffer if the printer uses a file descriptor
-    # (EscposFile / CDC ACM). Without this, the last bytes can stay in the
-    # BufferedWriter buffer indefinitely on a cached long-lived connection.
     try:
         device = getattr(printer, "device", None)
         if device and hasattr(device, "flush"):
