@@ -203,6 +203,11 @@ body {
 
 /* ── Grill widget ────────────────────────────────────────────────────────── */
 .grill-widget {
+  /* The widget is now an <a> for routing. Strip default link styling so it
+     visually still reads as a card, not as a hyperlink. */
+  display: block;
+  text-decoration: none;
+  color: var(--text);
   border-top: 1px solid var(--border);
   padding: 10px 12px;
   cursor: pointer;
@@ -210,6 +215,8 @@ body {
   transition: filter .15s;
 }
 .grill-widget:hover { filter: brightness(1.1); }
+.grill-widget,
+.grill-widget * { text-decoration: none; }
 
 .grill-widget-title {
   font-size: 0.75rem;
@@ -729,7 +736,13 @@ body {
 
 .commandes-list {
   flex: 1;
+  /* min-height: 0 is required for a flex child to allow its scrollbar to
+     activate instead of expanding to its content height — without this the
+     list overflows the viewport on mobile and nothing scrolls. */
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 16px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
@@ -942,5 +955,17 @@ body.menu-open .nav-burger span:nth-child(3) { transform: translateY(-8px) rotat
     font-size: 1rem;
     text-align: left;
   }
+
+  /* Cashier mobile tweaks:
+     - Narrower right panel so the menu's 2nd column isn't truncated.
+     - Cap the order summary so the grill widget stays fully visible. */
+  .right-panel { width: 200px; min-width: 200px; }
+  .order-summary { max-height: 40vh; padding: 8px 10px; }
+  .order-summary .summary-title { margin-bottom: 6px; font-size: 0.85rem; }
+  .order-line { font-size: 0.82rem; padding: 4px 0; }
+  .action-buttons { padding: 8px 10px; gap: 6px; }
+  .btn-validate { padding: 12px; font-size: 1rem; }
+  .btn-hold, .btn-cancel { padding: 8px; font-size: 0.9rem; }
+  .grill-widget { padding: 8px 10px; }
 }
 

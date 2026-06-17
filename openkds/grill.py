@@ -33,18 +33,16 @@ def compute_gauge(demand: int, stock_bucket_index: int, segment_size: int,
                   threshold: int = 0) -> int:
     """Compute a 0-4 gauge level for one component.
 
-    `threshold` is the minimum raw demand under which the gauge stays at 0
-    regardless of stock — used to ignore early noise when only one or two
-    items are in the pipeline. Affects gauges only; raw demand is reported
-    independently to the UI.
+    `threshold` shifts the gauge curve LEFT — setting threshold = N means
+    segments light up N demand units sooner than they otherwise would. It
+    is **not** a floor: raising it makes the gauge more sensitive, not less.
+    The displayed raw demand is unaffected; only the gauge calculation uses it.
     """
-    if demand < threshold:
-        return 0
     buckets = get_stock_buckets()
     if stock_bucket_index >= len(buckets):
         stock_bucket_index = len(buckets) - 1
     midpoint = buckets[stock_bucket_index]["midpoint"]
-    net = max(0, demand - midpoint)
+    net = max(0, demand - midpoint + threshold)
     segments = math.ceil(net / segment_size) if segment_size > 0 else 0
     return min(4, segments)
 
