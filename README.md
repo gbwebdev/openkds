@@ -7,7 +7,8 @@ Open-source point-of-sale and kitchen display system for school fairs — tablet
 ## Features
 
 - **Order entry** — touch-friendly menu buttons on a tablet, real-time order summary, draft hold-and-resume
-- **Order lifecycle** — In preparation → Delivered (manual or auto after a configurable delay) / Cancelled; dedicated **Commandes** screen with tabs
+- **Order lifecycle** — In preparation → Delivered (manual or auto after a configurable delay) / Cancelled; dedicated **Orders** screen with tabs
+- **Path-based navigation** — `/` (cashier), `/orders`, `/stats`, `/settings`, `/grill`; mobile hamburger menu
 - **Delivery mode** — open `?mode=delivery` on a second tablet for a fullscreen order-tracking view
 - **Thermal printing** — any number of printers, each assigned to one or more workshops via `menu.yaml`
 - **Grill management** — sliding-window demand forecast with a 4-segment gauge per tracked component (only in-preparation orders count)
@@ -130,6 +131,7 @@ Defaults ship inside the package (`openkds/defaults/config.json`). When the user
 | `next_order_number` | Resume counter after a break |
 | `auto_delivery_enabled` | `true` to auto-mark orders as delivered after the delay below |
 | `auto_delivery_minutes` | Delay before auto-delivery (minutes, fractions allowed e.g. `2.5`) |
+| `grill_demand_threshold` | Minimum raw demand under which the grill gauges stay at rest (default 3) |
 
 > Run `lsusb` with printers connected to find their USB IDs (`VVVV:PPPP`). Enter them in Settings → Printers.
 

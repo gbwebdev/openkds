@@ -27,8 +27,15 @@ html, body {
   overflow: hidden;
 }
 
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
 /* ── Screens ─────────────────────────────────────────────────────────────── */
-.screen { display: none; height: 100vh; flex-direction: column; overflow: hidden; }
+/* Each screen fills the remaining vertical space below the global navbar. */
+.screen { display: none; flex: 1; flex-direction: column; overflow: hidden; min-height: 0; }
 .screen.active { display: flex; }
 
 /* ── Navbar ──────────────────────────────────────────────────────────────── */
@@ -196,6 +203,11 @@ html, body {
 
 /* ── Grill widget ────────────────────────────────────────────────────────── */
 .grill-widget {
+  /* The widget is now an <a> for routing. Strip default link styling so it
+     visually still reads as a card, not as a hyperlink. */
+  display: block;
+  text-decoration: none;
+  color: var(--text);
   border-top: 1px solid var(--border);
   padding: 10px 12px;
   cursor: pointer;
@@ -203,6 +215,8 @@ html, body {
   transition: filter .15s;
 }
 .grill-widget:hover { filter: brightness(1.1); }
+.grill-widget,
+.grill-widget * { text-decoration: none; }
 
 .grill-widget-title {
   font-size: 0.75rem;
@@ -722,10 +736,16 @@ html, body {
 
 .commandes-list {
   flex: 1;
+  /* min-height: 0 is required for a flex child to allow its scrollbar to
+     activate instead of expanding to its content height — without this the
+     list overflows the viewport on mobile and nothing scrolls. */
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 16px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   gap: 12px;
   align-content: start;
 }
@@ -795,48 +815,157 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
+.cmd-delays {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.cmd-delays .btn-delay {
+  padding: 8px 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cmd-delays .btn-delay:hover { filter: brightness(1.15); }
+
 .cmd-actions {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
   margin-top: 4px;
 }
 .cmd-actions button {
   flex: 1;
   min-width: 0;
-  padding: 8px 6px;
+  padding: 10px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface2);
   color: var(--text);
   cursor: pointer;
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 600;
   white-space: nowrap;
 }
 .cmd-actions button:hover { filter: brightness(1.15); }
-.cmd-actions .btn-deliver { background: var(--green); border-color: var(--green); color: #1a1a2e; }
+.cmd-actions .btn-deliver { flex: 2; background: var(--green); border-color: var(--green); color: #1a1a2e; }
 .cmd-actions .btn-cancel-order { background: var(--red); border-color: var(--red); color: white; }
-.cmd-actions .btn-reprint-mini { background: transparent; }
-.cmd-actions .btn-delay { background: var(--surface); }
+.cmd-actions .btn-reprint-mini { flex: 0 0 auto; background: transparent; padding: 10px 12px; }
 
-/* ── Delivery mode (URL ?mode=delivery) — fullscreen Commandes ──────────── */
-body.mode-delivery #screen-main,
+/* ── Delivery mode (?mode=delivery) — fullscreen Commandes ──────────────── */
+body.mode-delivery #navbar,
+body.mode-delivery #draft-banner,
+body.mode-delivery #screen-cashier,
 body.mode-delivery #screen-grill,
 body.mode-delivery #screen-stats,
 body.mode-delivery #screen-settings {
   display: none !important;
 }
-body.mode-delivery #screen-commandes {
+body.mode-delivery #screen-orders {
   display: flex;
 }
 body.mode-delivery .commandes-list {
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
   gap: 16px;
   padding: 20px;
 }
 body.mode-delivery .cmd-card { padding: 16px 18px; }
 body.mode-delivery .cmd-num { font-size: 1.8rem; }
-body.mode-delivery .cmd-actions button { padding: 12px 8px; font-size: 0.95rem; }
-body.mode-delivery .back-btn { display: none; }
+body.mode-delivery .cmd-actions button { padding: 14px 8px; font-size: 1rem; }
+
+/* ── Navbar brand + hamburger + mobile drawer ───────────────────────────── */
+.navbar-brand {
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: var(--text);
+  text-decoration: none;
+  letter-spacing: 0.5px;
+}
+.navbar-brand:hover { color: var(--accent); }
+
+.navbar a.nav-btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.navbar a.nav-btn.active {
+  background: var(--surface2);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.nav-burger {
+  display: none;
+  width: 38px;
+  height: 38px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 9px 8px;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.nav-burger span {
+  display: block;
+  height: 2px;
+  background: var(--text);
+  border-radius: 1px;
+  transition: transform .2s, opacity .2s;
+}
+body.menu-open .nav-burger span:nth-child(1) { transform: translateY(8px) rotate(45deg); }
+body.menu-open .nav-burger span:nth-child(2) { opacity: 0; }
+body.menu-open .nav-burger span:nth-child(3) { transform: translateY(-8px) rotate(-45deg); }
+
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  z-index: 1500;
+}
+
+/* Mobile: hide nav buttons by default, show hamburger; drawer opens on tap */
+@media (max-width: 720px) {
+  .nav-burger { display: flex; }
+  .navbar-right {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 260px;
+    max-width: 80vw;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    flex-direction: column;
+    align-items: stretch;
+    padding: 64px 16px 16px;
+    gap: 12px;
+    z-index: 1600;
+    transform: translateX(100%);
+    transition: transform .25s ease;
+    box-shadow: -4px 0 20px rgba(0,0,0,.4);
+  }
+  body.menu-open .navbar-right { transform: translateX(0); }
+  .navbar-right .nav-btn {
+    padding: 12px 14px;
+    font-size: 1rem;
+    text-align: left;
+  }
+
+  /* Cashier mobile tweaks:
+     - Narrower right panel so the menu's 2nd column isn't truncated.
+     - Cap the order summary so the grill widget stays fully visible. */
+  .right-panel { width: 200px; min-width: 200px; }
+  .order-summary { max-height: 40vh; padding: 8px 10px; }
+  .order-summary .summary-title { margin-bottom: 6px; font-size: 0.85rem; }
+  .order-line { font-size: 0.82rem; padding: 4px 0; }
+  .action-buttons { padding: 8px 10px; gap: 6px; }
+  .btn-validate { padding: 12px; font-size: 1rem; }
+  .btn-hold, .btn-cancel { padding: 8px; font-size: 0.9rem; }
+  .grill-widget { padding: 8px 10px; }
+}
 

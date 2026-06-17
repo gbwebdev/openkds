@@ -41,6 +41,7 @@ class PrinterTestRequest(BaseModel):
 class ConfigUpdate(BaseModel):
     grill_window_minutes: Optional[int] = None
     grill_segment_size: Optional[int] = None
+    grill_demand_threshold: Optional[int] = None
     next_order_number: Optional[int] = None
     printer_devices: Optional[dict] = None
     button_colors: Optional[dict] = None

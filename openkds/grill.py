@@ -29,12 +29,20 @@ def compute_demand(window_minutes: int) -> dict:
     return demand
 
 
-def compute_gauge(demand: int, stock_bucket_index: int, segment_size: int) -> int:
+def compute_gauge(demand: int, stock_bucket_index: int, segment_size: int,
+                  threshold: int = 0) -> int:
+    """Compute a 0-4 gauge level for one component.
+
+    `threshold` shifts the gauge curve LEFT — setting threshold = N means
+    segments light up N demand units sooner than they otherwise would. It
+    is **not** a floor: raising it makes the gauge more sensitive, not less.
+    The displayed raw demand is unaffected; only the gauge calculation uses it.
+    """
     buckets = get_stock_buckets()
     if stock_bucket_index >= len(buckets):
         stock_bucket_index = len(buckets) - 1
     midpoint = buckets[stock_bucket_index]["midpoint"]
-    net = max(0, demand - midpoint)
+    net = max(0, demand - midpoint + threshold)
     segments = math.ceil(net / segment_size) if segment_size > 0 else 0
     return min(4, segments)
 
@@ -42,6 +50,7 @@ def compute_gauge(demand: int, stock_bucket_index: int, segment_size: int) -> in
 def get_grill_state(config: dict) -> dict:
     window_minutes = config.get("grill_window_minutes", 20)
     segment_size = config.get("grill_segment_size", 6)
+    threshold = config.get("grill_demand_threshold", 3)
 
     demand = compute_demand(window_minutes)
     stock = database.get_grill_stock()
@@ -52,7 +61,7 @@ def get_grill_state(config: dict) -> dict:
         tracks = ws.get("tracks", [])
         track_labels = ws.get("track_labels", {t: t for t in tracks})
         gauges = {
-            t: compute_gauge(demand.get(t, 0), stock.get(t, 0), segment_size)
+            t: compute_gauge(demand.get(t, 0), stock.get(t, 0), segment_size, threshold)
             for t in tracks
         }
         dashboards[ws["id"]] = {
@@ -64,6 +73,7 @@ def get_grill_state(config: dict) -> dict:
             "stock_buckets": buckets,
             "window_minutes": window_minutes,
             "segment_size": segment_size,
+            "demand_threshold": threshold,
         }
 
     return {"dashboards": dashboards}

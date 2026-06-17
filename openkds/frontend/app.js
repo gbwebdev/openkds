@@ -6,19 +6,87 @@ let currentOrder = {};      // { item_id: qty }
 let grillState = null;
 let ws = null;
 let config = {};
-let orders = [];            // all orders loaded from backend
+let orders = [];
 let activeCommandesTab = 'en_preparation';
 let countdownTimer = null;
 
 const DRAFT_KEY = 'openkds_draft_v1';
 
+// ── Router ────────────────────────────────────────────────────────────────────
+// Each known path maps to a screen ID. Unknown paths fall back to cashier.
+const ROUTES = {
+  '/':         'cashier',
+  '/orders':   'orders',
+  '/stats':    'stats',
+  '/settings': 'settings',
+  '/grill':    'grill',
+};
+
+function navigate(path, replace = false) {
+  const target = ROUTES[path] ? path : '/';
+  if (location.pathname !== target) {
+    if (replace) history.replaceState({}, '', target);
+    else         history.pushState({}, '', target);
+  }
+  renderRoute(target);
+  closeMenu();
+}
+
+function renderRoute(path) {
+  const screenName = ROUTES[path] || 'cashier';
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById('screen-' + screenName);
+  if (el) el.classList.add('active');
+
+  document.querySelectorAll('.nav-btn[data-link]').forEach(a => {
+    const href = a.getAttribute('href');
+    a.classList.toggle('active', href === path);
+  });
+
+  // Per-screen load hooks
+  if (screenName === 'stats')    loadStats();
+  if (screenName === 'settings') loadSettings();
+  if (screenName === 'grill')    renderGrillFull();
+  if (screenName === 'orders')   refreshCommandesScreen();
+}
+
+function setupLinkInterceptor() {
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[data-link]');
+    if (!a) return;
+    const href = a.getAttribute('href');
+    if (!href || !href.startsWith('/')) return;
+    e.preventDefault();
+    navigate(href);
+  });
+  window.addEventListener('popstate', () => renderRoute(location.pathname));
+}
+
+// Backwards-compat helper for inline onclick="showScreen('xxx')" calls.
+function showScreen(name) {
+  const path = Object.entries(ROUTES).find(([, n]) => n === name)?.[0] || '/';
+  navigate(path);
+}
+
+// ── Mobile menu drawer ────────────────────────────────────────────────────────
+function toggleMenu() {
+  const open = document.body.classList.toggle('menu-open');
+  document.getElementById('menu-backdrop').style.display = open ? 'block' : 'none';
+}
+function closeMenu() {
+  document.body.classList.remove('menu-open');
+  const backdrop = document.getElementById('menu-backdrop');
+  if (backdrop) backdrop.style.display = 'none';
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
-  // URL ?mode=delivery puts the UI in fullscreen Commandes mode.
   const params = new URLSearchParams(location.search);
   if (params.get('mode') === 'delivery') {
     document.body.classList.add('mode-delivery');
   }
+
+  setupLinkInterceptor();
 
   await Promise.all([loadConfig(), loadMenu()]);
   connectWebSocket();
@@ -26,8 +94,11 @@ async function init() {
   loadOrders();
   refreshDraftBanner();
 
+  // Initial render: derive screen from URL, or force orders in delivery mode.
   if (document.body.classList.contains('mode-delivery')) {
-    showScreen('commandes');
+    navigate('/orders', /*replace=*/true);
+  } else {
+    renderRoute(location.pathname);
   }
 }
 
@@ -55,16 +126,6 @@ async function loadOrders() {
     refreshCommandesScreen();
     refreshNavBadge();
   } catch {}
-}
-
-// ── Screen navigation ──────────────────────────────────────────────────────────
-function showScreen(name) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById('screen-' + name).classList.add('active');
-  if (name === 'stats') loadStats();
-  if (name === 'settings') loadSettings();
-  if (name === 'grill') renderGrillFull();
-  if (name === 'commandes') refreshCommandesScreen();
 }
 
 // ── Menu buttons ──────────────────────────────────────────────────────────────
@@ -187,12 +248,11 @@ function resumeDraft() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch {}
   if (!saved) return;
-  // Drop any active draft (replace, don't merge — it would surprise the operator)
   currentOrder = saved;
   localStorage.removeItem(DRAFT_KEY);
   updateOrderUI();
   refreshDraftBanner();
-  showScreen('main');
+  navigate('/');
 }
 
 function discardDraft() {
@@ -285,13 +345,13 @@ function renderGrillWidget() {
     return;
   }
   const { tracks, track_labels, demand, gauges } = dash;
-  container.innerHTML = tracks.map(t => {
-    const g = gauges?.[t] ?? 0;
-    const d = demand?.[t] ?? 0;
+  container.innerHTML = tracks.map(tr => {
+    const g = gauges?.[tr] ?? 0;
+    const d = demand?.[tr] ?? 0;
     const segs = [1,2,3,4].map(i =>
       `<span class="mini-seg ${i <= g ? 'on-' + g : ''}"></span>`
     ).join('');
-    const shortName = (track_labels?.[t] || t).substring(0, 6);
+    const shortName = (track_labels?.[tr] || tr).substring(0, 6);
     return `<div class="grill-row">
       <span class="mini-gauge">${segs}</span>
       <span>${shortName}: <strong>${d}</strong></span>
@@ -310,18 +370,18 @@ function renderGrillFull() {
   const { tracks, track_labels, demand, gauges, stock, stock_buckets, window_minutes } = dash;
   const GAUGE_LABELS = ['Att.', '+½ doz.', '+1 doz.', '+2 doz.', 'Urgence!'];
 
-  container.innerHTML = tracks.map(t => {
-    const d = demand?.[t] ?? 0;
-    const g = gauges?.[t] ?? 0;
-    const stockIdx = stock?.[t] ?? 0;
-    const label = track_labels?.[t] || t;
+  container.innerHTML = tracks.map(tr => {
+    const d = demand?.[tr] ?? 0;
+    const g = gauges?.[tr] ?? 0;
+    const stockIdx = stock?.[tr] ?? 0;
+    const label = track_labels?.[tr] || tr;
     const segments = [1,2,3,4].map(i =>
       `<div class="gauge-segment ${i <= g ? 'lit-' + g : ''}"></div>`
     ).join('');
     const segLabels = GAUGE_LABELS.map(l => `<div class="gauge-label">${l}</div>`).join('');
     const stockBtns = (stock_buckets || []).map((b, i) =>
       `<button class="stock-btn ${i === stockIdx ? 'active' : ''}"
-        onclick="setStock('${t}', ${i})">${b.label}</button>`
+        onclick="setStock('${tr}', ${i})">${b.label}</button>`
     ).join('');
     return `<div class="grill-meat-block">
       <div class="grill-meat-title">${label}</div>
@@ -352,14 +412,13 @@ async function setStock(component, bucketIndex) {
 // ── Commandes screen ──────────────────────────────────────────────────────────
 function showCommandesTab(status) {
   activeCommandesTab = status;
-  document.querySelectorAll('.cmd-tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.tab === status);
+  document.querySelectorAll('.cmd-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.tab === status);
   });
   refreshCommandesScreen();
 }
 
 function refreshCommandesScreen() {
-  // Tab counts
   const counts = { en_preparation: 0, livre: 0, annule: 0 };
   for (const o of orders) counts[o.status] = (counts[o.status] || 0) + 1;
   for (const status of Object.keys(counts)) {
@@ -367,12 +426,11 @@ function refreshCommandesScreen() {
     if (el) el.textContent = counts[status];
   }
 
-  // Filtered list
   const filtered = orders
     .filter(o => o.status === activeCommandesTab)
     .sort((a, b) => activeCommandesTab === 'en_preparation'
-      ? a.number - b.number  // oldest first for prep queue
-      : b.number - a.number); // newest first for history-style tabs
+      ? a.number - b.number
+      : b.number - a.number);
 
   const list = document.getElementById('commandes-list');
   if (filtered.length === 0) {
@@ -383,6 +441,9 @@ function refreshCommandesScreen() {
   list.innerHTML = filtered.map(o => renderOrderCard(o, labelById)).join('');
 
   startCountdownLoop();
+  // Sync update so progress bars render at the correct fill immediately,
+  // instead of starting at the CSS default (0%) and waiting one second.
+  updateCountdowns();
 }
 
 function renderOrderCard(o, labelById) {
@@ -394,28 +455,33 @@ function renderOrderCard(o, labelById) {
     .map(([id, q]) => `<li><span class="qty">${q}×</span>${labelById[id] || id}</li>`)
     .join('');
 
-  let countdownHtml = '';
-  if (o.status === 'en_preparation' && o.auto_delivery_at) {
-    countdownHtml = `
-      <div class="cmd-progress"><div class="cmd-progress-bar"
-        data-created="${new Date(o.created_at).getTime()}"
-        data-target="${Math.round(o.auto_delivery_at * 1000)}"></div></div>
-      <div class="cmd-countdown"
-        data-target="${Math.round(o.auto_delivery_at * 1000)}">…</div>`;
-  }
+  // Use the server-provided epoch timestamps for time math; never re-parse
+  // the display string, which would mismatch when the server timezone
+  // differs from the browser's (e.g. UTC container vs. local browser).
+  const createdTs = (o.created_at_ts || 0) * 1000;
+  const targetTs  = (o.auto_delivery_at || 0) * 1000;
+  const showCountdown = o.status === 'en_preparation' && targetTs > 0 && createdTs > 0;
 
-  let actions = '';
+  const countdownHtml = showCountdown ? `
+    <div class="cmd-progress"><div class="cmd-progress-bar"
+      data-created="${createdTs}"
+      data-target="${targetTs}"></div></div>
+    <div class="cmd-countdown" data-target="${targetTs}">…</div>` : '';
+
+  let actions;
   if (o.status === 'en_preparation') {
-    actions = `<div class="cmd-actions">
-      <button class="btn-deliver" onclick="deliverOrder(${o.id})">Livrer</button>
-      ${o.auto_delivery_at
-        ? `<button class="btn-delay" onclick="delayOrder(${o.id},60)">+1 min</button>
-           <button class="btn-delay" onclick="delayOrder(${o.id},150)">+2½ min</button>
-           <button class="btn-delay" onclick="delayOrder(${o.id},300)">+5 min</button>`
-        : ''}
-      <button class="btn-reprint-mini" onclick="reprintOrder(${o.id}, this)">🖨</button>
-      <button class="btn-cancel-order" onclick="confirmCancelOrder(${o.id}, ${o.number})">Annuler</button>
-    </div>`;
+    const delaysRow = showCountdown ? `
+      <div class="cmd-delays">
+        <button class="btn-delay" onclick="delayOrder(${o.id},60)">+1 min</button>
+        <button class="btn-delay" onclick="delayOrder(${o.id},150)">+2½ min</button>
+        <button class="btn-delay" onclick="delayOrder(${o.id},300)">+5 min</button>
+      </div>` : '';
+    actions = `${delaysRow}
+      <div class="cmd-actions">
+        <button class="btn-deliver" onclick="deliverOrder(${o.id})">Livrer</button>
+        <button class="btn-reprint-mini" onclick="reprintOrder(${o.id}, this)">🖨</button>
+        <button class="btn-cancel-order" onclick="confirmCancelOrder(${o.id}, ${o.number})">Annuler</button>
+      </div>`;
   } else {
     actions = `<div class="cmd-actions">
       <button class="btn-reprint-mini" onclick="reprintOrder(${o.id}, this)">🖨 Réimprimer</button>
@@ -451,6 +517,7 @@ function updateCountdowns() {
     const target = Number(bar.dataset.target);
     if (!created || !target) return;
     const total = target - created;
+    if (total <= 0) return;
     const elapsed = now - created;
     const pct = Math.max(0, Math.min(100, (elapsed / total) * 100));
     bar.style.width = pct + '%';
@@ -482,9 +549,7 @@ function refreshNavBadge() {
 }
 
 // ── Order actions ─────────────────────────────────────────────────────────────
-async function deliverOrder(id) {
-  await patchStatus(id, 'livre');
-}
+async function deliverOrder(id) { await patchStatus(id, 'livre'); }
 
 async function patchStatus(id, status) {
   try {
@@ -494,7 +559,6 @@ async function patchStatus(id, status) {
       body: JSON.stringify({ status }),
     });
     if (!res.ok) throw new Error();
-    // WS will broadcast the update; nothing else to do
   } catch {
     showToast('Erreur mise à jour statut', 'err');
   }
@@ -652,6 +716,7 @@ async function loadSettings() {
 
     document.getElementById('input-grill-window').value = config.grill_window_minutes;
     document.getElementById('input-grill-segment').value = config.grill_segment_size;
+    document.getElementById('input-grill-threshold').value = config.grill_demand_threshold ?? 3;
     document.getElementById('input-org-name').value = config.org_name || '';
     document.getElementById('input-event-name').value = config.event_name || '';
     document.getElementById('input-next-order').value = config.next_order_number;
@@ -698,8 +763,15 @@ async function saveNextOrder() {
 async function saveGrillParams() {
   const w = parseInt(document.getElementById('input-grill-window').value);
   const s = parseInt(document.getElementById('input-grill-segment').value);
-  if (isNaN(w) || w < 1 || isNaN(s) || s < 1) { showToast('Valeurs invalides', 'err'); return; }
-  await saveConfigFields({ grill_window_minutes: w, grill_segment_size: s });
+  const th = parseInt(document.getElementById('input-grill-threshold').value);
+  if (isNaN(w) || w < 1 || isNaN(s) || s < 1 || isNaN(th) || th < 0) {
+    showToast('Valeurs invalides', 'err'); return;
+  }
+  await saveConfigFields({
+    grill_window_minutes: w,
+    grill_segment_size: s,
+    grill_demand_threshold: th,
+  });
   showToast('Paramètres enregistrés', 'ok');
 }
 
@@ -714,7 +786,6 @@ async function saveAutoDelivery() {
     auto_delivery_minutes: minutes,
   });
   showToast('Livraison auto enregistrée', 'ok');
-  // Refresh orders so cards pick up the new auto_delivery_at
   loadOrders();
 }
 

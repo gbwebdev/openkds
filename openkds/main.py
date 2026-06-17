@@ -112,8 +112,16 @@ async def ncsi():
 
 # ── SPA ───────────────────────────────────────────────────────────────────────
 
+_SPA_PATHS = ("/", "/orders", "/stats", "/settings", "/grill")
+
+
 @app.get("/", response_class=HTMLResponse)
+@app.get("/orders", response_class=HTMLResponse)
+@app.get("/stats", response_class=HTMLResponse)
+@app.get("/settings", response_class=HTMLResponse)
+@app.get("/grill", response_class=HTMLResponse)
 async def serve_index():
+    """SPA entry point — every known route serves the same index.html."""
     return HTMLResponse((FRONTEND_DIR / "index.html").read_text(encoding="utf-8"))
 
 
@@ -272,18 +280,25 @@ async def create_order(order_data: OrderCreate):
 
 
 def _enrich_order(order: dict, config: dict) -> dict:
-    """Attach the computed auto-delivery target time (epoch seconds) to the order.
+    """Attach computed timestamps (epoch seconds) to the order.
 
-    Returns None for auto_delivery_at when the order is not in_preparation or when
-    auto-delivery is disabled.
+    - `created_at_ts` is always set: epoch seconds derived from `created_at`.
+      The client must use this for time math instead of parsing the display
+      string, which would otherwise produce different epoch values when the
+      server and the browser run in different timezones (typical of Docker:
+      UTC container + local browser).
+    - `auto_delivery_at` is the absolute target time for auto-delivery, or
+      None when the order is not in_preparation or auto-delivery is disabled.
     """
     enriched = dict(order)
+    created = datetime.fromisoformat(order["created_at"])
+    enriched["created_at_ts"] = created.timestamp()
+
     if order.get("status") != "en_preparation" or not config.get("auto_delivery_enabled"):
         enriched["auto_delivery_at"] = None
         return enriched
     minutes = config.get("auto_delivery_minutes", 20)
     delay = order.get("delivery_delay_seconds", 0)
-    created = datetime.fromisoformat(order["created_at"])
     target = created + timedelta(seconds=minutes * 60 + delay)
     enriched["auto_delivery_at"] = target.timestamp()
     return enriched
@@ -379,7 +394,8 @@ async def get_config():
 async def put_config(data: ConfigUpdate):
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
     config = update_config(updates)
-    if "grill_window_minutes" in updates or "grill_segment_size" in updates:
+    if any(k in updates for k in
+           ("grill_window_minutes", "grill_segment_size", "grill_demand_threshold")):
         await broadcast({"type": "grill_updated", "grill": get_grill_state(config)})
     return config
 
