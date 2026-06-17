@@ -25,6 +25,7 @@
     <span></span><span></span><span></span>
   </button>
   <div class="navbar-right" id="navbar-right">
+    <a href="/" class="nav-btn" data-link>Caisse</a>
     <a href="/orders" class="nav-btn" data-link>
       Commandes <span id="cmd-nav-badge" class="nav-badge" style="display:none">0</span>
     </a>
@@ -73,12 +74,18 @@
         </button>
       </div>
 
-      <a href="/grill" class="grill-widget" id="grill-widget" data-link>
-        <div class="grill-widget-title">GRILLADES</div>
+      <div class="grill-widget" id="grill-widget">
+        <div class="grill-widget-header">
+          <a href="/grill" class="grill-widget-title" data-link>GRILLADES</a>
+          <button class="grill-widget-toggle" aria-label="Replier / déplier"
+                  aria-expanded="true" onclick="toggleGrillWidget()">
+            <span class="chevron">▾</span>
+          </button>
+        </div>
         <div id="grill-widget-content">
           <!-- Populated by JS -->
         </div>
-      </a>
+      </div>
     </div>
 
   </div>
