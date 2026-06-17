@@ -11,6 +11,7 @@ let activeCommandesTab = 'en_preparation';
 let countdownTimer = null;
 
 const DRAFT_KEY = 'openkds_draft_v1';
+const GRILL_COLLAPSED_KEY = 'openkds_grill_collapsed_v1';
 
 // ── Router ────────────────────────────────────────────────────────────────────
 // Each known path maps to a screen ID. Unknown paths fall back to cashier.
@@ -79,6 +80,26 @@ function closeMenu() {
   if (backdrop) backdrop.style.display = 'none';
 }
 
+// ── Grill widget accordion ────────────────────────────────────────────────────
+function toggleGrillWidget() {
+  const w = document.getElementById('grill-widget');
+  if (!w) return;
+  const collapsed = w.classList.toggle('collapsed');
+  const toggle = w.querySelector('.grill-widget-toggle');
+  if (toggle) toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  try { localStorage.setItem(GRILL_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch {}
+}
+
+function applyGrillWidgetState() {
+  const w = document.getElementById('grill-widget');
+  if (!w) return;
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(GRILL_COLLAPSED_KEY) === '1'; } catch {}
+  w.classList.toggle('collapsed', collapsed);
+  const toggle = w.querySelector('.grill-widget-toggle');
+  if (toggle) toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   const params = new URLSearchParams(location.search);
@@ -87,6 +108,7 @@ async function init() {
   }
 
   setupLinkInterceptor();
+  applyGrillWidgetState();
 
   await Promise.all([loadConfig(), loadMenu()]);
   connectWebSocket();
