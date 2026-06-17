@@ -13,6 +13,13 @@ let countdownTimer = null;
 const DRAFT_KEY = 'openkds_draft_v1';
 const GRILL_COLLAPSED_KEY = 'openkds_grill_collapsed_v1';
 
+// ── Hello Asso QR scan state ─────────────────────────────────────────────────
+let scannedQr = null;             // QR currently attached to the in-progress order
+let scannerStream = null;         // MediaStream from getUserMedia
+let scannerDetector = null;       // BarcodeDetector instance
+let scannerTimer = null;          // setTimeout id for the scan loop
+let helloassoEnabled = false;     // toggled by the periodic summary refresh
+
 // ── Router ────────────────────────────────────────────────────────────────────
 // Each known path maps to a screen ID. Unknown paths fall back to cashier.
 const ROUTES = {
@@ -152,6 +159,7 @@ async function init() {
   loadGrillState();
   loadOrders();
   refreshDraftBanner();
+  refreshHelloassoSummary();
 
   // Initial render: derive screen from URL, or force orders in delivery mode.
   if (document.body.classList.contains('mode-delivery')) {
@@ -248,6 +256,7 @@ async function submitOrder() {
 
   const body = { items: {} };
   menuItems.forEach(i => { body.items[i.id] = currentOrder[i.id] || 0; });
+  if (scannedQr) body.helloasso_qr = scannedQr;
 
   try {
     const res = await fetch('/api/orders', {
@@ -268,6 +277,7 @@ async function submitOrder() {
       showToast(t('order.error_prefix', { detail: data.detail || '?' }), 'err');
     }
     currentOrder = {};
+    clearScannedTicket();
     updateOrderUI();
   } catch {
     showToast(t('common.network_error'), 'err');
@@ -283,6 +293,7 @@ function confirmCancel() {
 
 function cancelOrder() {
   currentOrder = {};
+  clearScannedTicket();
   updateOrderUI();
   closeModal();
 }
@@ -747,6 +758,7 @@ async function loadStats() {
 
 // ── Settings ───────────────────────────────────────────────────────────────────
 async function loadSettings() {
+  refreshHelloassoSummary();
   try {
     const [cfgRes, statsRes, printersRes] = await Promise.all([
       fetch('/api/config'),
@@ -957,6 +969,233 @@ function showToast(msg, type = 'ok', duration = 3500) {
   el.style.display = 'block';
   if (_toastTimer) clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => { el.style.display = 'none'; }, duration);
+}
+
+// ── Hello Asso pre-paid tickets ───────────────────────────────────────────────
+async function refreshHelloassoSummary() {
+  try {
+    const res = await fetch('/api/helloasso/summary');
+    if (!res.ok) return;
+    const s = await res.json();
+    helloassoEnabled = (s.total || 0) > 0;
+    // Surface or hide the scan bar on the cashier screen accordingly.
+    const bar = document.getElementById('scan-bar');
+    if (bar) bar.style.display = helloassoEnabled ? 'flex' : 'none';
+    // Update the Settings summary if it's currently rendered.
+    const summary = document.getElementById('helloasso-summary');
+    if (summary) {
+      summary.textContent = helloassoEnabled
+        ? `${s.remaining} billet(s) disponible(s) sur ${s.total} (${s.redeemed} utilisé(s))`
+        : 'Aucun billet importé.';
+    }
+  } catch {}
+}
+
+function downloadHelloassoTemplate() {
+  const ids = menuItems.map(i => i.id);
+  const header = ['qr_code', 'customer_name', ...ids].join(',');
+  const example = [
+    '"187858951:639158372579863733"', '"Alice Dupont"',
+    ...ids.map(() => '0'),
+  ].join(',');
+  const blob = new Blob([header + '\n' + example + '\n'], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'helloasso_template.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function importHelloasso() {
+  const fileEl = document.getElementById('input-helloasso-csv');
+  const replace = document.getElementById('input-helloasso-replace').checked;
+  if (!fileEl.files || fileEl.files.length === 0) {
+    showToast('Sélectionnez un fichier CSV', 'err'); return;
+  }
+  const fd = new FormData();
+  fd.append('file', fileEl.files[0]);
+  try {
+    const res = await fetch('/api/helloasso/import', {
+      method: 'POST',
+      headers: { 'X-Replace': replace ? 'yes' : 'no' },
+      body: fd,
+    });
+    if (!res.ok) { showToast('Erreur import', 'err'); return; }
+    const r = await res.json();
+    showToast(`${r.imported} billet(s) importé(s)`, 'ok');
+    fileEl.value = '';
+    refreshHelloassoSummary();
+  } catch {
+    showToast('Erreur réseau', 'err');
+  }
+}
+
+function confirmClearHelloasso() { showModal('clear-helloasso'); }
+
+async function clearHelloasso() {
+  closeModal();
+  try {
+    const res = await fetch('/api/helloasso/tickets', {
+      method: 'DELETE',
+      headers: { 'X-Confirm-Reset': 'yes' },
+    });
+    if (res.ok) {
+      showToast('Billets supprimés', 'ok');
+      refreshHelloassoSummary();
+    } else {
+      showToast('Erreur', 'err');
+    }
+  } catch { showToast('Erreur réseau', 'err'); }
+}
+
+// ── QR scanner — uses the native BarcodeDetector when available ──────────────
+async function openScanner() {
+  showModal('scanner');
+  document.getElementById('scanner-stage').style.display = 'block';
+  document.getElementById('scanner-manual').style.display = 'none';
+  document.getElementById('scanner-status').textContent = 'Démarrage de la caméra…';
+
+  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
+    showScannerManualFallback('API caméra/BarcodeDetector indisponible.');
+    return;
+  }
+
+  try {
+    const formats = await window.BarcodeDetector.getSupportedFormats();
+    if (!formats.includes('qr_code')) {
+      showScannerManualFallback('Format QR non supporté par ce navigateur.');
+      return;
+    }
+    scannerDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    scannerStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' },
+    });
+    const video = document.getElementById('scanner-video');
+    video.srcObject = scannerStream;
+    await video.play();
+    document.getElementById('scanner-status').textContent = 'Pointez la caméra sur le QR code.';
+    scanLoop(video);
+  } catch (e) {
+    showScannerManualFallback('Accès caméra refusé : ' + (e?.message || ''));
+  }
+}
+
+function showScannerManualFallback(reason) {
+  document.getElementById('scanner-stage').style.display = 'none';
+  document.getElementById('scanner-manual').style.display = 'block';
+  const input = document.getElementById('scanner-manual-input');
+  if (input) input.value = '';
+  console.warn('Scanner fallback:', reason);
+}
+
+async function scanLoop(video) {
+  if (!scannerStream) return;
+  try {
+    const codes = await scannerDetector.detect(video);
+    if (codes && codes.length > 0) {
+      const raw = codes[0].rawValue;
+      closeScanner();
+      handleScannedCode(raw);
+      return;
+    }
+  } catch {}
+  scannerTimer = setTimeout(() => scanLoop(video), 250);
+}
+
+function submitManualScan() {
+  const v = document.getElementById('scanner-manual-input').value.trim();
+  if (!v) return;
+  closeScanner();
+  handleScannedCode(v);
+}
+
+function closeScanner() {
+  if (scannerTimer) { clearTimeout(scannerTimer); scannerTimer = null; }
+  if (scannerStream) {
+    scannerStream.getTracks().forEach(t => t.stop());
+    scannerStream = null;
+  }
+  const video = document.getElementById('scanner-video');
+  if (video) video.srcObject = null;
+  scannerDetector = null;
+  closeModal();
+}
+
+// ── Ticket lookup ────────────────────────────────────────────────────────────
+async function handleScannedCode(qr) {
+  // The QR is treated as an opaque key. Trim whitespace and pass as-is.
+  const code = (qr || '').trim();
+  if (!code) return;
+  try {
+    const res = await fetch(`/api/helloasso/ticket/${encodeURIComponent(code)}`);
+    if (res.status === 404) {
+      showToast('Billet inconnu', 'err'); return;
+    }
+    if (!res.ok) { showToast('Erreur de vérification', 'err'); return; }
+    const t = await res.json();
+    showTicketModal(t);
+  } catch {
+    showToast('Erreur réseau', 'err');
+  }
+}
+
+function showTicketModal(ticket) {
+  const labelById = Object.fromEntries(menuItems.map(i => [i.id, i.label.replace('\n', ' ')]));
+  const lines = Object.entries(ticket.items || {})
+    .filter(([, q]) => q > 0)
+    .map(([id, q]) => `<li><strong>${q}×</strong> ${labelById[id] || id}</li>`)
+    .join('');
+  const body = document.getElementById('modal-ticket-body');
+  const title = document.getElementById('modal-ticket-title');
+  title.textContent = ticket.customer_name ? `Billet — ${ticket.customer_name}` : 'Billet';
+
+  if (ticket.redeemed_at) {
+    body.innerHTML = `
+      <p style="color:var(--red);font-weight:600">
+        ⚠️ Déjà utilisé le ${ticket.redeemed_at.replace('T',' ')}
+        ${ticket.order_id ? `(commande #${ticket.order_id})` : ''}.
+      </p>
+      <ul style="margin-top:8px;padding-left:20px">${lines}</ul>`;
+    document.getElementById('modal-ticket-confirm').style.display = 'none';
+  } else if (!lines) {
+    body.innerHTML = `<p style="color:#888">Aucun item associé à ce billet.</p>`;
+    document.getElementById('modal-ticket-confirm').style.display = 'none';
+  } else {
+    body.innerHTML = `<p>Contenu prépayé :</p>
+      <ul style="margin-top:8px;padding-left:20px">${lines}</ul>`;
+    const confirm = document.getElementById('modal-ticket-confirm');
+    confirm.style.display = '';
+    confirm.onclick = () => {
+      applyTicketToOrder(ticket);
+      closeModal();
+    };
+  }
+  showModal('ticket');
+}
+
+function applyTicketToOrder(ticket) {
+  // Add the prepaid items to the current draft (don't replace — the cashier
+  // might want to bundle a paid extra with the prepaid items).
+  for (const [id, q] of Object.entries(ticket.items || {})) {
+    if (q > 0) currentOrder[id] = (currentOrder[id] || 0) + q;
+  }
+  scannedQr = ticket.qr_code;
+  updateOrderUI();
+  refreshScannedTicketUI();
+  showToast(`Billet attaché — ${Object.values(ticket.items).reduce((s, v) => s + v, 0)} item(s) ajouté(s)`, 'ok');
+}
+
+function refreshScannedTicketUI() {
+  const active = document.getElementById('scan-active');
+  if (active) active.style.display = scannedQr ? 'flex' : 'none';
+}
+
+function clearScannedTicket() {
+  scannedQr = null;
+  refreshScannedTicketUI();
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────────

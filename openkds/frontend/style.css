@@ -1021,3 +1021,47 @@ body.menu-open .nav-burger span:nth-child(3) { top: 19px; transform: rotate(-45d
   #grill-widget-content { padding: 0 10px 8px; }
 }
 
+
+/* ── Hello Asso scanner ────────────────────────────────────────────────────── */
+.scan-bar {
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.btn-scan {
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: background .15s, border-color .15s;
+}
+.btn-scan:hover { background: rgba(255,255,255,.04); border-color: var(--accent); }
+
+.scan-active {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(46,204,113,.15);
+  border: 1px solid var(--green);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--green);
+}
+.scan-clear {
+  background: transparent;
+  border: none;
+  color: var(--green);
+  cursor: pointer;
+  font-size: 0.95rem;
+  padding: 0 4px;
+}
+
+.modal-wide { max-width: 480px; }
+.file-row { display: block; margin-top: 6px; }

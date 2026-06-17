@@ -37,6 +37,15 @@ def init_db():
 
             INSERT OR IGNORE INTO grill_stock (id, stock, updated_at)
             VALUES (1, '{}', datetime('now'));
+
+            CREATE TABLE IF NOT EXISTS helloasso_tickets (
+                qr_code       TEXT PRIMARY KEY,
+                customer_name TEXT,
+                items         TEXT NOT NULL,            -- JSON {item_id: qty}
+                imported_at   TEXT NOT NULL,
+                redeemed_at   TEXT,
+                order_id      INTEGER REFERENCES orders(id) ON DELETE SET NULL
+            );
         """)
         # Step 2 — add columns missing from pre-existing tables. Must happen
         # BEFORE creating indexes that reference those columns.
@@ -142,6 +151,11 @@ def delete_all_orders():
         conn.execute(
             "UPDATE grill_stock SET stock='{}', updated_at=datetime('now') WHERE id=1"
         )
+        # Tickets stay imported — operators don't want to re-upload a CSV after
+        # every reset — but their redemption is cleared so they're reusable.
+        conn.execute(
+            "UPDATE helloasso_tickets SET redeemed_at = NULL, order_id = NULL"
+        )
 
 
 def get_orders_since(cutoff_iso: str, status: str | None = None) -> list[dict]:
@@ -170,6 +184,80 @@ def update_grill_stock(updates: dict) -> dict:
             (json.dumps(stock), _now()),
         )
     return stock
+
+
+# ── Hello Asso tickets ────────────────────────────────────────────────────────
+
+def _row_to_ticket(row) -> dict:
+    d = dict(row)
+    if isinstance(d.get("items"), str):
+        d["items"] = json.loads(d["items"])
+    return d
+
+
+def import_helloasso_tickets(rows: list[dict], replace: bool) -> dict:
+    """Bulk-insert tickets. Each row dict must have qr_code, items (dict).
+
+    `replace=True` clears the table first (typical for a fresh CSV upload).
+    Returns counters: {imported, skipped_duplicate, total_in_db}.
+    """
+    imported = 0
+    skipped = 0
+    now = _now()
+    with get_connection() as conn:
+        if replace:
+            conn.execute("DELETE FROM helloasso_tickets")
+        for r in rows:
+            qr = r.get("qr_code")
+            items = r.get("items") or {}
+            if not qr or not isinstance(items, dict):
+                continue
+            try:
+                conn.execute(
+                    "INSERT INTO helloasso_tickets (qr_code, customer_name, items, imported_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (qr, r.get("customer_name"), json.dumps(items), now),
+                )
+                imported += 1
+            except sqlite3.IntegrityError:
+                skipped += 1
+        total = conn.execute("SELECT COUNT(*) FROM helloasso_tickets").fetchone()[0]
+    return {"imported": imported, "skipped_duplicate": skipped, "total_in_db": total}
+
+
+def get_helloasso_ticket(qr_code: str) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM helloasso_tickets WHERE qr_code = ?", (qr_code,)
+        ).fetchone()
+    return _row_to_ticket(row) if row else None
+
+
+def redeem_helloasso_ticket(qr_code: str, order_id: int) -> bool:
+    """Mark a ticket as redeemed against a specific order. Idempotent: returns
+    False if the ticket is unknown or already redeemed."""
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE helloasso_tickets SET redeemed_at = ?, order_id = ? "
+            "WHERE qr_code = ? AND redeemed_at IS NULL",
+            (_now(), order_id, qr_code),
+        )
+        return cur.rowcount > 0
+
+
+def get_helloasso_summary() -> dict:
+    with get_connection() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM helloasso_tickets").fetchone()[0]
+        redeemed = conn.execute(
+            "SELECT COUNT(*) FROM helloasso_tickets WHERE redeemed_at IS NOT NULL"
+        ).fetchone()[0]
+    return {"total": total, "redeemed": redeemed, "remaining": total - redeemed}
+
+
+def clear_helloasso_tickets() -> int:
+    with get_connection() as conn:
+        cur = conn.execute("DELETE FROM helloasso_tickets")
+        return cur.rowcount
 
 
 def get_stats(menu_items: list[dict]) -> dict:

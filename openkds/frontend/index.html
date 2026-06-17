@@ -63,6 +63,15 @@
         <div class="summary-sep"></div>
       </div>
 
+      <!-- Hello Asso ticket scanner — hidden when no tickets imported -->
+      <div id="scan-bar" class="scan-bar" style="display:none">
+        <button class="btn-scan" onclick="openScanner()">📷 Scanner un billet Hello Asso</button>
+        <div id="scan-active" class="scan-active" style="display:none">
+          <span>Billet scanné</span>
+          <button onclick="clearScannedTicket()" class="scan-clear" aria-label="Détacher">✕</button>
+        </div>
+      </div>
+
       <div class="action-buttons">
         <button id="btn-validate" class="btn-validate" data-i18n="order.validate" onclick="submitOrder()" disabled>
           VALIDER
@@ -244,6 +253,28 @@
       <button data-i18n="settings.colors_save" onclick="saveColors()" class="btn-save">Enregistrer les couleurs</button>
     </section>
 
+    <!-- Hello Asso prepaid tickets -->
+    <section class="settings-section">
+      <h2>Billets Hello Asso</h2>
+      <p style="color:#888;font-size:.85rem;margin-bottom:8px">
+        Importer un CSV avec colonnes <code>qr_code</code>, <code>customer_name</code>,
+        puis une colonne par item du menu (en-tête = id de l'item, valeur = quantité).
+      </p>
+      <div id="helloasso-summary" style="margin-bottom:8px;font-size:.9rem">—</div>
+      <label class="file-row">
+        <input type="file" id="input-helloasso-csv" accept=".csv,text/csv">
+      </label>
+      <br>
+      <label class="checkbox-label" style="margin-top:6px">
+        <input type="checkbox" id="input-helloasso-replace" checked>
+        Remplacer les billets déjà importés
+      </label>
+      <br><br>
+      <button onclick="importHelloasso()" class="btn-save">Importer</button>
+      <button onclick="downloadHelloassoTemplate()" class="btn-save" style="background:transparent;color:var(--text);border:1px solid var(--border)">Modèle CSV</button>
+      <button onclick="confirmClearHelloasso()" class="btn-reset" style="margin-left:8px">Vider</button>
+    </section>
+
     <!-- Reset -->
     <section class="settings-section settings-danger">
       <h2 data-i18n="settings.danger">Zone dangereuse</h2>
@@ -273,6 +304,45 @@
     <div class="modal-actions">
       <button id="modal-cancel-order-confirm" data-i18n="modal.cancel_order_confirm" class="btn-danger">Confirmer l'annulation</button>
       <button data-i18n="modal.no" onclick="closeModal()" class="btn-secondary">Non</button>
+    </div>
+  </div>
+
+  <!-- QR scanner -->
+  <div id="modal-scanner" class="modal modal-wide" style="display:none">
+    <h2 style="margin:0 0 10px;font-size:1.1rem">Scanner un billet</h2>
+    <div id="scanner-stage">
+      <video id="scanner-video" playsinline muted autoplay
+             style="width:100%;border-radius:8px;background:#000;max-height:50vh"></video>
+      <p id="scanner-status" style="color:#888;font-size:.85rem;margin-top:6px">
+        Pointez la caméra sur le QR code.
+      </p>
+    </div>
+    <div id="scanner-manual" style="display:none;margin-top:10px">
+      <p style="color:#888;font-size:.85rem">Caméra indisponible. Saisissez le code manuellement :</p>
+      <input type="text" id="scanner-manual-input" class="input-field" style="width:100%;margin-top:6px"
+             placeholder="187858951:639158372579863733">
+      <button onclick="submitManualScan()" class="btn-save" style="margin-top:8px">Valider</button>
+    </div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button onclick="closeScanner()" class="btn-secondary">Annuler</button>
+    </div>
+  </div>
+
+  <!-- Ticket lookup result -->
+  <div id="modal-ticket" class="modal" style="display:none">
+    <h2 style="margin:0 0 10px;font-size:1.1rem" id="modal-ticket-title">Billet</h2>
+    <div id="modal-ticket-body" style="font-size:.95rem"></div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button id="modal-ticket-confirm" class="btn-validate" style="padding:10px 18px">Utiliser</button>
+      <button onclick="closeModal()" class="btn-secondary">Annuler</button>
+    </div>
+  </div>
+
+  <div id="modal-clear-helloasso" class="modal" style="display:none">
+    <p>Supprimer tous les billets Hello Asso importés ?</p>
+    <div class="modal-actions">
+      <button onclick="clearHelloasso()" class="btn-danger">Supprimer</button>
+      <button onclick="closeModal()" class="btn-secondary">Annuler</button>
     </div>
   </div>
 

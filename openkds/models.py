@@ -14,6 +14,7 @@ class OrderStatus(str, Enum):
 
 class OrderCreate(BaseModel):
     items: dict[str, int]
+    helloasso_qr: Optional[str] = None  # set when the order was started from a scan
 
     @model_validator(mode="after")
     def check_not_empty(self):

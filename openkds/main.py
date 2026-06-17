@@ -6,7 +6,10 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Header
+from fastapi import (
+    FastAPI, HTTPException, WebSocket, WebSocketDisconnect,
+    Request, Header, UploadFile, File,
+)
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -15,6 +18,8 @@ from .config import load_config, save_config, update_config
 from .database import (
     init_db, insert_order, get_order_by_id, get_all_orders, get_orders_by_status,
     set_order_status, add_order_delay, delete_all_orders, update_grill_stock, get_stats,
+    import_helloasso_tickets, get_helloasso_ticket, redeem_helloasso_ticket,
+    get_helloasso_summary, clear_helloasso_tickets,
 )
 from .models import (
     OrderCreate, OrderStatusUpdate, OrderDelayUpdate, OrderStatus,
@@ -250,6 +255,12 @@ async def create_order(order_data: OrderCreate):
     items = {k: v for k, v in order_data.items.items() if v > 0}
     order = insert_order(number, items)
 
+    # Tie a Hello Asso ticket to the order if the cashier scanned one. Best
+    # effort: a failure to redeem (already used, unknown QR) doesn't block
+    # the order — the cashier already committed to it by clicking VALIDER.
+    if order_data.helloasso_qr:
+        redeem_helloasso_ticket(order_data.helloasso_qr, order["id"])
+
     printer_results = _print_order(order, config)
 
     grill_state = get_grill_state(config)
@@ -420,6 +431,81 @@ async def put_config(data: ConfigUpdate):
            ("grill_window_minutes", "grill_segment_size", "grill_demand_threshold")):
         await broadcast({"type": "grill_updated", "grill": get_grill_state(config)})
     return config
+
+
+# ── Printers ──────────────────────────────────────────────────────────────────
+
+# ── Hello Asso pre-paid tickets ───────────────────────────────────────────────
+
+def _parse_helloasso_csv(text: str, valid_item_ids: set[str]) -> list[dict]:
+    """Parse OpenKDS' canonical Hello Asso CSV format.
+
+    Expected columns:
+      - qr_code (required) — the raw QR payload, stored as opaque key
+      - customer_name (optional)
+      - one column per menu item ID, the cell value is the integer quantity
+      - any other column is ignored
+
+    Returns a list of dicts ready for import_helloasso_tickets().
+    """
+    import csv, io
+    reader = csv.DictReader(io.StringIO(text))
+    rows = []
+    for raw in reader:
+        qr = (raw.get("qr_code") or "").strip()
+        if not qr:
+            continue
+        items: dict[str, int] = {}
+        for col, val in raw.items():
+            if col not in valid_item_ids:
+                continue
+            try:
+                q = int(val) if val else 0
+            except (TypeError, ValueError):
+                q = 0
+            if q > 0:
+                items[col] = q
+        rows.append({
+            "qr_code": qr,
+            "customer_name": (raw.get("customer_name") or "").strip() or None,
+            "items": items,
+        })
+    return rows
+
+
+@app.post("/api/helloasso/import")
+async def helloasso_import(file: UploadFile = File(...),
+                           x_replace: str = Header("yes", alias="X-Replace")):
+    """Upload a CSV and replace (default) or merge the existing tickets."""
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")  # tolerate Excel BOM
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1")
+    valid_ids = {i["id"] for i in get_menu_items()}
+    rows = _parse_helloasso_csv(text, valid_ids)
+    return import_helloasso_tickets(rows, replace=(x_replace.lower() in ("yes", "1", "true")))
+
+
+@app.get("/api/helloasso/summary")
+async def helloasso_summary():
+    return get_helloasso_summary()
+
+
+@app.get("/api/helloasso/ticket/{qr_code:path}")
+async def helloasso_get(qr_code: str):
+    t = get_helloasso_ticket(qr_code)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return t
+
+
+@app.delete("/api/helloasso/tickets")
+async def helloasso_clear(x_confirm_reset: str = Header(None, alias="X-Confirm-Reset")):
+    if x_confirm_reset != "yes":
+        raise HTTPException(status_code=400, detail="Header X-Confirm-Reset: yes required")
+    deleted = clear_helloasso_tickets()
+    return {"deleted": deleted}
 
 
 # ── Printers ──────────────────────────────────────────────────────────────────
