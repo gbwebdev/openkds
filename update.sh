@@ -53,8 +53,12 @@ info "Fichiers synchronisés"
 # ── 3. Réinstallation du package Python ───────────────────────────────────────
 step "Mise à jour du package Python"
 
+# Force la réinstallation : pyproject.toml a une version statique ("0.1.0"),
+# release-please ne la met pas à jour, donc sans --force-reinstall pip considère
+# le package déjà à jour et ignore le code synchronisé via rsync.
+# --no-deps évite de retoucher fastapi, uvicorn, etc. qui n'ont pas changé.
 "$INSTALL_DIR/venv/bin/pip" install --quiet --upgrade pip
-"$INSTALL_DIR/venv/bin/pip" install --quiet "$INSTALL_DIR"
+"$INSTALL_DIR/venv/bin/pip" install --quiet --force-reinstall --no-deps "$INSTALL_DIR"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/venv"
 info "Package installé"
 
