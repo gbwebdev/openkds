@@ -14,11 +14,13 @@ const DRAFT_KEY = 'openkds_draft_v1';
 const GRILL_COLLAPSED_KEY = 'openkds_grill_collapsed_v1';
 
 // ── Hello Asso QR scan state ─────────────────────────────────────────────────
-let scannedQr = null;             // QR currently attached to the in-progress order
+// scannedQrs may hold ONE QR (single-ticket scan) or N QRs (group-scan: the
+// operator ticked "Ajouter toute la commande" in the modal).
+let scannedQrs = [];
 let scannerStream = null;         // MediaStream from getUserMedia
 let scannerDetector = null;       // BarcodeDetector instance
 let scannerTimer = null;          // setTimeout id for the scan loop
-let helloassoEnabled = false;     // toggled by the periodic summary refresh
+let helloassoEnabled = false;     // toggled by the summary refresh
 
 // ── Router ────────────────────────────────────────────────────────────────────
 // Each known path maps to a screen ID. Unknown paths fall back to cashier.
@@ -256,7 +258,7 @@ async function submitOrder() {
 
   const body = { items: {} };
   menuItems.forEach(i => { body.items[i.id] = currentOrder[i.id] || 0; });
-  if (scannedQr) body.helloasso_qr = scannedQr;
+  if (scannedQrs.length > 0) body.helloasso_qrs = scannedQrs.slice();
 
   try {
     const res = await fetch('/api/orders', {
@@ -805,6 +807,7 @@ async function loadSettings() {
     document.getElementById('input-next-order').value = config.next_order_number;
     document.getElementById('input-auto-delivery-enabled').checked = !!config.auto_delivery_enabled;
     document.getElementById('input-auto-delivery-minutes').value = config.auto_delivery_minutes ?? 20;
+    document.getElementById('input-helloasso-group-scan').checked = !!config.helloasso_group_scan_enabled;
 
     const pickersDiv = document.getElementById('color-pickers');
     pickersDiv.innerHTML = menuItems.map(item =>
@@ -981,21 +984,22 @@ async function refreshHelloassoSummary() {
     // Surface or hide the scan bar on the cashier screen accordingly.
     const bar = document.getElementById('scan-bar');
     if (bar) bar.style.display = helloassoEnabled ? 'flex' : 'none';
-    // Update the Settings summary if it's currently rendered.
     const summary = document.getElementById('helloasso-summary');
     if (summary) {
       summary.textContent = helloassoEnabled
-        ? `${s.remaining} billet(s) disponible(s) sur ${s.total} (${s.redeemed} utilisé(s))`
-        : 'Aucun billet importé.';
+        ? t('helloasso.summary', {
+            remaining: s.remaining, total: s.total, redeemed: s.redeemed,
+          })
+        : t('helloasso.no_tickets');
     }
   } catch {}
 }
 
 function downloadHelloassoTemplate() {
   const ids = menuItems.map(i => i.id);
-  const header = ['qr_code', 'customer_name', ...ids].join(',');
+  const header = ['qr_code', 'customer_name', 'precommande_id', ...ids].join(',');
   const example = [
-    '"187858951:639158372579863733"', '"Alice Dupont"',
+    '"187858951:639158372579863733"', '"Alice Dupont"', '"HA-12345"',
     ...ids.map(() => '0'),
   ].join(',');
   const blob = new Blob([header + '\n' + example + '\n'], { type: 'text/csv;charset=utf-8' });
@@ -1012,9 +1016,12 @@ function downloadHelloassoTemplate() {
 async function importHelloasso() {
   const fileEl = document.getElementById('input-helloasso-csv');
   const replace = document.getElementById('input-helloasso-replace').checked;
+  const groupScan = document.getElementById('input-helloasso-group-scan').checked;
   if (!fileEl.files || fileEl.files.length === 0) {
-    showToast('Sélectionnez un fichier CSV', 'err'); return;
+    showToast(t('helloasso.pick_file'), 'err'); return;
   }
+  // Persist the toggle alongside the import — saves the operator a click.
+  await saveConfigFields({ helloasso_group_scan_enabled: groupScan });
   const fd = new FormData();
   fd.append('file', fileEl.files[0]);
   try {
@@ -1023,13 +1030,13 @@ async function importHelloasso() {
       headers: { 'X-Replace': replace ? 'yes' : 'no' },
       body: fd,
     });
-    if (!res.ok) { showToast('Erreur import', 'err'); return; }
+    if (!res.ok) { showToast(t('helloasso.import_error'), 'err'); return; }
     const r = await res.json();
-    showToast(`${r.imported} billet(s) importé(s)`, 'ok');
+    showToast(t('helloasso.imported', { count: r.imported }), 'ok');
     fileEl.value = '';
     refreshHelloassoSummary();
   } catch {
-    showToast('Erreur réseau', 'err');
+    showToast(t('common.network_error'), 'err');
   }
 }
 
@@ -1043,12 +1050,12 @@ async function clearHelloasso() {
       headers: { 'X-Confirm-Reset': 'yes' },
     });
     if (res.ok) {
-      showToast('Billets supprimés', 'ok');
+      showToast(t('helloasso.cleared'), 'ok');
       refreshHelloassoSummary();
     } else {
-      showToast('Erreur', 'err');
+      showToast(t('helloasso.import_error'), 'err');
     }
-  } catch { showToast('Erreur réseau', 'err'); }
+  } catch { showToast(t('common.network_error'), 'err'); }
 }
 
 // ── QR scanner — uses the native BarcodeDetector when available ──────────────
@@ -1056,7 +1063,7 @@ async function openScanner() {
   showModal('scanner');
   document.getElementById('scanner-stage').style.display = 'block';
   document.getElementById('scanner-manual').style.display = 'none';
-  document.getElementById('scanner-status').textContent = 'Démarrage de la caméra…';
+  document.getElementById('scanner-status').textContent = t('helloasso.scanner_starting');
 
   if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
     showScannerManualFallback('API caméra/BarcodeDetector indisponible.');
@@ -1076,7 +1083,7 @@ async function openScanner() {
     const video = document.getElementById('scanner-video');
     video.srcObject = scannerStream;
     await video.play();
-    document.getElementById('scanner-status').textContent = 'Pointez la caméra sur le QR code.';
+    document.getElementById('scanner-status').textContent = t('helloasso.scanner_point');
     scanLoop(video);
   } catch (e) {
     showScannerManualFallback('Accès caméra refusé : ' + (e?.message || ''));
@@ -1126,50 +1133,86 @@ function closeScanner() {
 
 // ── Ticket lookup ────────────────────────────────────────────────────────────
 async function handleScannedCode(qr) {
-  // The QR is treated as an opaque key. Trim whitespace and pass as-is.
   const code = (qr || '').trim();
   if (!code) return;
+  const groupEnabled = !!config.helloasso_group_scan_enabled;
+  const url = groupEnabled
+    ? `/api/helloasso/precommande/${encodeURIComponent(code)}`
+    : `/api/helloasso/ticket/${encodeURIComponent(code)}`;
   try {
-    const res = await fetch(`/api/helloasso/ticket/${encodeURIComponent(code)}`);
-    if (res.status === 404) {
-      showToast('Billet inconnu', 'err'); return;
+    const res = await fetch(url);
+    if (res.status === 404) { showToast(t('helloasso.unknown'), 'err'); return; }
+    if (!res.ok) { showToast(t('helloasso.check_error'), 'err'); return; }
+    const data = await res.json();
+    if (groupEnabled) {
+      // {precommande_id, seed, tickets, aggregated_items}
+      showTicketModal(data.seed, data);
+    } else {
+      showTicketModal(data, null);
     }
-    if (!res.ok) { showToast('Erreur de vérification', 'err'); return; }
-    const t = await res.json();
-    showTicketModal(t);
   } catch {
-    showToast('Erreur réseau', 'err');
+    showToast(t('common.network_error'), 'err');
   }
 }
 
-function showTicketModal(ticket) {
+function showTicketModal(ticket, group) {
   const labelById = Object.fromEntries(menuItems.map(i => [i.id, i.label.replace('\n', ' ')]));
-  const lines = Object.entries(ticket.items || {})
+  const renderList = (items) => Object.entries(items || {})
     .filter(([, q]) => q > 0)
     .map(([id, q]) => `<li><strong>${q}×</strong> ${labelById[id] || id}</li>`)
     .join('');
+  const lines = renderList(ticket.items);
   const body = document.getElementById('modal-ticket-body');
   const title = document.getElementById('modal-ticket-title');
-  title.textContent = ticket.customer_name ? `Billet — ${ticket.customer_name}` : 'Billet';
+  title.textContent = ticket.customer_name
+    ? t('helloasso.modal_title_customer', { name: ticket.customer_name })
+    : t('helloasso.modal_title');
+
+  const groupRow = document.getElementById('modal-ticket-group-row');
+  const groupToggle = document.getElementById('modal-ticket-group-toggle');
+  const groupSummary = document.getElementById('modal-ticket-group-summary');
+
+  // Hide the group toggle by default; turn it on below only if the conditions are met.
+  groupRow.style.display = 'none';
+  groupToggle.checked = false;
+
+  const hasGroup = group && group.precommande_id
+    && group.tickets && group.tickets.length > 1;
 
   if (ticket.redeemed_at) {
     body.innerHTML = `
       <p style="color:var(--red);font-weight:600">
-        ⚠️ Déjà utilisé le ${ticket.redeemed_at.replace('T',' ')}
-        ${ticket.order_id ? `(commande #${ticket.order_id})` : ''}.
+        ${t('helloasso.already_used', {
+          date: ticket.redeemed_at.replace('T',' '),
+          order: ticket.order_id ? '#' + ticket.order_id : '—',
+        })}
       </p>
       <ul style="margin-top:8px;padding-left:20px">${lines}</ul>`;
     document.getElementById('modal-ticket-confirm').style.display = 'none';
   } else if (!lines) {
-    body.innerHTML = `<p style="color:#888">Aucun item associé à ce billet.</p>`;
+    body.innerHTML = `<p style="color:#888">${t('helloasso.no_items')}</p>`;
     document.getElementById('modal-ticket-confirm').style.display = 'none';
   } else {
-    body.innerHTML = `<p>Contenu prépayé :</p>
+    body.innerHTML = `<p>${t('helloasso.prepaid_content')}</p>
       <ul style="margin-top:8px;padding-left:20px">${lines}</ul>`;
     const confirm = document.getElementById('modal-ticket-confirm');
     confirm.style.display = '';
+    if (hasGroup) {
+      groupRow.style.display = 'flex';
+      const groupCount = group.tickets.length;
+      const groupItems = Object.values(group.aggregated_items || {})
+        .reduce((s, v) => s + v, 0);
+      groupSummary.textContent = t('helloasso.group_summary', {
+        count: groupCount, items: groupItems,
+      });
+    }
     confirm.onclick = () => {
-      applyTicketToOrder(ticket);
+      const useGroup = hasGroup && groupToggle.checked;
+      if (useGroup) {
+        applyGroupToOrder(group);
+      } else {
+        applyTicketToOrder(ticket);
+      }
       closeModal();
     };
   }
@@ -1177,24 +1220,45 @@ function showTicketModal(ticket) {
 }
 
 function applyTicketToOrder(ticket) {
-  // Add the prepaid items to the current draft (don't replace — the cashier
-  // might want to bundle a paid extra with the prepaid items).
   for (const [id, q] of Object.entries(ticket.items || {})) {
     if (q > 0) currentOrder[id] = (currentOrder[id] || 0) + q;
   }
-  scannedQr = ticket.qr_code;
+  scannedQrs.push(ticket.qr_code);
   updateOrderUI();
   refreshScannedTicketUI();
-  showToast(`Billet attaché — ${Object.values(ticket.items).reduce((s, v) => s + v, 0)} item(s) ajouté(s)`, 'ok');
+  const added = Object.values(ticket.items || {}).reduce((s, v) => s + v, 0);
+  showToast(t('helloasso.ticket_attached', { count: added }), 'ok');
+}
+
+function applyGroupToOrder(group) {
+  // Add ALL items from the precommande to the cart in one go. The operator
+  // already accepted "tout ou rien" via the modal toggle — once committed,
+  // every QR in the group will be redeemed when VALIDER is clicked.
+  for (const [id, q] of Object.entries(group.aggregated_items || {})) {
+    if (q > 0) currentOrder[id] = (currentOrder[id] || 0) + q;
+  }
+  for (const ticket of group.tickets || []) {
+    if (!scannedQrs.includes(ticket.qr_code)) scannedQrs.push(ticket.qr_code);
+  }
+  updateOrderUI();
+  refreshScannedTicketUI();
+  const added = Object.values(group.aggregated_items || {}).reduce((s, v) => s + v, 0);
+  showToast(t('helloasso.group_attached', { count: added }), 'ok');
 }
 
 function refreshScannedTicketUI() {
   const active = document.getElementById('scan-active');
-  if (active) active.style.display = scannedQr ? 'flex' : 'none';
+  const label = document.getElementById('scan-active-label');
+  if (active) active.style.display = scannedQrs.length > 0 ? 'flex' : 'none';
+  if (label) {
+    label.textContent = scannedQrs.length > 1
+      ? t('helloasso.scanned_n', { count: scannedQrs.length })
+      : t('helloasso.scanned');
+  }
 }
 
 function clearScannedTicket() {
-  scannedQr = null;
+  scannedQrs = [];
   refreshScannedTicketUI();
 }
 

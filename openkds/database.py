@@ -39,12 +39,13 @@ def init_db():
             VALUES (1, '{}', datetime('now'));
 
             CREATE TABLE IF NOT EXISTS helloasso_tickets (
-                qr_code       TEXT PRIMARY KEY,
-                customer_name TEXT,
-                items         TEXT NOT NULL,            -- JSON {item_id: qty}
-                imported_at   TEXT NOT NULL,
-                redeemed_at   TEXT,
-                order_id      INTEGER REFERENCES orders(id) ON DELETE SET NULL
+                qr_code        TEXT PRIMARY KEY,
+                customer_name  TEXT,
+                items          TEXT NOT NULL,            -- JSON {item_id: qty}
+                imported_at    TEXT NOT NULL,
+                redeemed_at    TEXT,
+                order_id       INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+                precommande_id TEXT
             );
         """)
         # Step 2 — add columns missing from pre-existing tables. Must happen
@@ -54,8 +55,13 @@ def init_db():
         _ensure_column(conn, "orders", "delivered_at", "TEXT")
         _ensure_column(conn, "orders", "delivery_delay_seconds",
                        "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "helloasso_tickets", "precommande_id", "TEXT")
         # Step 3 — create indexes once we know the columns exist.
         conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_helloasso_precommande "
+            "ON helloasso_tickets(precommande_id)"
+        )
 
 
 def _ensure_column(conn, table: str, name: str, definition: str) -> None:
@@ -197,6 +203,7 @@ def _row_to_ticket(row) -> dict:
 
 def import_helloasso_tickets(rows: list[dict], replace: bool) -> dict:
     """Bulk-insert tickets. Each row dict must have qr_code, items (dict).
+    Optional keys: customer_name, precommande_id.
 
     `replace=True` clears the table first (typical for a fresh CSV upload).
     Returns counters: {imported, skipped_duplicate, total_in_db}.
@@ -214,9 +221,11 @@ def import_helloasso_tickets(rows: list[dict], replace: bool) -> dict:
                 continue
             try:
                 conn.execute(
-                    "INSERT INTO helloasso_tickets (qr_code, customer_name, items, imported_at) "
-                    "VALUES (?, ?, ?, ?)",
-                    (qr, r.get("customer_name"), json.dumps(items), now),
+                    "INSERT INTO helloasso_tickets "
+                    "(qr_code, customer_name, items, imported_at, precommande_id) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (qr, r.get("customer_name"), json.dumps(items), now,
+                     r.get("precommande_id") or None),
                 )
                 imported += 1
             except sqlite3.IntegrityError:
@@ -231,6 +240,43 @@ def get_helloasso_ticket(qr_code: str) -> dict | None:
             "SELECT * FROM helloasso_tickets WHERE qr_code = ?", (qr_code,)
         ).fetchone()
     return _row_to_ticket(row) if row else None
+
+
+def get_helloasso_precommande(qr_code: str) -> dict | None:
+    """Return the scanned ticket + all unredeemed siblings sharing its precommande_id.
+
+    None if the QR is unknown. If the ticket has no precommande_id, the returned
+    dict still contains the single ticket — letting the caller treat it as a
+    one-element group with no special handling.
+    """
+    seed = get_helloasso_ticket(qr_code)
+    if seed is None:
+        return None
+    precommande_id = seed.get("precommande_id")
+    if not precommande_id:
+        return {
+            "precommande_id": None,
+            "seed": seed,
+            "tickets": [seed],
+            "aggregated_items": seed.get("items", {}),
+        }
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM helloasso_tickets WHERE precommande_id = ? "
+            "AND (redeemed_at IS NULL OR qr_code = ?) ORDER BY qr_code",
+            (precommande_id, qr_code),
+        ).fetchall()
+    tickets = [_row_to_ticket(r) for r in rows]
+    aggregated: dict[str, int] = {}
+    for t in tickets:
+        for item_id, qty in (t.get("items") or {}).items():
+            aggregated[item_id] = aggregated.get(item_id, 0) + qty
+    return {
+        "precommande_id": precommande_id,
+        "seed": seed,
+        "tickets": tickets,
+        "aggregated_items": aggregated,
+    }
 
 
 def redeem_helloasso_ticket(qr_code: str, order_id: int) -> bool:

@@ -9,5 +9,6 @@
   "event_name": "",
   "auto_delivery_enabled": false,
   "auto_delivery_minutes": 20,
-  "ui_lang": "fr"
+  "ui_lang": "fr",
+  "helloasso_group_scan_enabled": false
 }

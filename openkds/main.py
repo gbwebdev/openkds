@@ -19,7 +19,7 @@ from .database import (
     init_db, insert_order, get_order_by_id, get_all_orders, get_orders_by_status,
     set_order_status, add_order_delay, delete_all_orders, update_grill_stock, get_stats,
     import_helloasso_tickets, get_helloasso_ticket, redeem_helloasso_ticket,
-    get_helloasso_summary, clear_helloasso_tickets,
+    get_helloasso_summary, clear_helloasso_tickets, get_helloasso_precommande,
 )
 from .models import (
     OrderCreate, OrderStatusUpdate, OrderDelayUpdate, OrderStatus,
@@ -255,11 +255,18 @@ async def create_order(order_data: OrderCreate):
     items = {k: v for k, v in order_data.items.items() if v > 0}
     order = insert_order(number, items)
 
-    # Tie a Hello Asso ticket to the order if the cashier scanned one. Best
-    # effort: a failure to redeem (already used, unknown QR) doesn't block
-    # the order — the cashier already committed to it by clicking VALIDER.
+    # Tie any Hello Asso tickets the cashier attached. Best-effort: a failure
+    # to redeem (already used, unknown QR) doesn't block the order — the
+    # cashier already committed by clicking VALIDER. The frontend decides
+    # which QRs to attach: a single scanned ticket in single mode, the whole
+    # precommande group in group mode (the cashier ticked "tout ou rien").
+    qrs_to_redeem: list[str] = []
     if order_data.helloasso_qr:
-        redeem_helloasso_ticket(order_data.helloasso_qr, order["id"])
+        qrs_to_redeem.append(order_data.helloasso_qr)
+    if order_data.helloasso_qrs:
+        qrs_to_redeem.extend(order_data.helloasso_qrs)
+    for qr in qrs_to_redeem:
+        redeem_helloasso_ticket(qr, order["id"])
 
     printer_results = _print_order(order, config)
 
@@ -443,6 +450,8 @@ def _parse_helloasso_csv(text: str, valid_item_ids: set[str]) -> list[dict]:
     Expected columns:
       - qr_code (required) — the raw QR payload, stored as opaque key
       - customer_name (optional)
+      - precommande_id (optional) — groups tickets from the same Hello Asso
+        order so the operator can redeem them in one scan ("group" mode).
       - one column per menu item ID, the cell value is the integer quantity
       - any other column is ignored
 
@@ -468,6 +477,7 @@ def _parse_helloasso_csv(text: str, valid_item_ids: set[str]) -> list[dict]:
         rows.append({
             "qr_code": qr,
             "customer_name": (raw.get("customer_name") or "").strip() or None,
+            "precommande_id": (raw.get("precommande_id") or "").strip() or None,
             "items": items,
         })
     return rows
@@ -498,6 +508,17 @@ async def helloasso_get(qr_code: str):
     if t is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return t
+
+
+@app.get("/api/helloasso/precommande/{qr_code:path}")
+async def helloasso_precommande(qr_code: str):
+    """Return the scanned ticket + all unredeemed siblings from the same
+    Hello Asso order. Used by the cashier's "Ajouter toute la commande"
+    toggle in the scan modal."""
+    g = get_helloasso_precommande(qr_code)
+    if g is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return g
 
 
 @app.delete("/api/helloasso/tickets")

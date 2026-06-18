@@ -9,7 +9,7 @@ Open-source point-of-sale and kitchen display system for school fairs — tablet
 - **Order entry** — touch-friendly menu buttons on a tablet, real-time order summary, draft hold-and-resume
 - **Order lifecycle** — In preparation → Delivered (manual or auto after a configurable delay) / Cancelled; dedicated **Orders** screen with tabs
 - **Path-based navigation** — `/` (cashier), `/orders`, `/stats`, `/settings`, `/grill`; mobile hamburger menu
-- **Hello Asso prepaid tickets** — import a CSV of prepaid customers, scan their QR at the till (native `BarcodeDetector` + manual fallback) to pre-fill the order; redemption tracked to block reuse
+- **Hello Asso prepaid tickets** — import a CSV of prepaid customers, scan their QR at the till (native `BarcodeDetector` + manual fallback) to pre-fill the order; optional "Add the whole order" toggle redeems every ticket from the same Hello Asso order in one tap; redemption tracked to block reuse
 - **Delivery mode** — open `?mode=delivery` on a second tablet for a fullscreen order-tracking view
 - **Thermal printing** — any number of printers, each assigned to one or more workshops via `menu.yaml`
 - **Grill management** — sliding-window demand forecast with a 4-segment gauge per tracked component (only in-preparation orders count)

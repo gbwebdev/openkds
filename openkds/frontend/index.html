@@ -65,10 +65,10 @@
 
       <!-- Hello Asso ticket scanner — hidden when no tickets imported -->
       <div id="scan-bar" class="scan-bar" style="display:none">
-        <button class="btn-scan" onclick="openScanner()">📷 Scanner un billet Hello Asso</button>
+        <button class="btn-scan" data-i18n="helloasso.scan_button" onclick="openScanner()">📷 Scanner un billet Hello Asso</button>
         <div id="scan-active" class="scan-active" style="display:none">
-          <span>Billet scanné</span>
-          <button onclick="clearScannedTicket()" class="scan-clear" aria-label="Détacher">✕</button>
+          <span id="scan-active-label" data-i18n="helloasso.scanned">Billet scanné</span>
+          <button onclick="clearScannedTicket()" class="scan-clear" data-i18n-aria-label="helloasso.detach" aria-label="Détacher">✕</button>
         </div>
       </div>
 
@@ -255,9 +255,9 @@
 
     <!-- Hello Asso prepaid tickets -->
     <section class="settings-section">
-      <h2>Billets Hello Asso</h2>
-      <p style="color:#888;font-size:.85rem;margin-bottom:8px">
-        Importer un CSV avec colonnes <code>qr_code</code>, <code>customer_name</code>,
+      <h2 data-i18n="helloasso.section">Billets Hello Asso</h2>
+      <p data-i18n="helloasso.import_desc" style="color:#888;font-size:.85rem;margin-bottom:8px">
+        Importer un CSV avec colonnes qr_code, customer_name, precommande_id (optionnel),
         puis une colonne par item du menu (en-tête = id de l'item, valeur = quantité).
       </p>
       <div id="helloasso-summary" style="margin-bottom:8px;font-size:.9rem">—</div>
@@ -267,12 +267,21 @@
       <br>
       <label class="checkbox-label" style="margin-top:6px">
         <input type="checkbox" id="input-helloasso-replace" checked>
-        Remplacer les billets déjà importés
+        <span data-i18n="helloasso.replace_existing">Remplacer les billets déjà importés</span>
       </label>
-      <br><br>
-      <button onclick="importHelloasso()" class="btn-save">Importer</button>
-      <button onclick="downloadHelloassoTemplate()" class="btn-save" style="background:transparent;color:var(--text);border:1px solid var(--border)">Modèle CSV</button>
-      <button onclick="confirmClearHelloasso()" class="btn-reset" style="margin-left:8px">Vider</button>
+      <br>
+      <label class="checkbox-label" style="margin-top:6px">
+        <input type="checkbox" id="input-helloasso-group-scan">
+        <span data-i18n="helloasso.group_scan">Proposer "Ajouter toute la commande" au scan</span>
+      </label>
+      <small data-i18n="helloasso.group_scan_help" style="display:block;color:#888;margin:2px 0 0 26px">
+        Quand un billet scanné fait partie d'une précommande, un toggle permet d'ajouter
+        tous les billets de la même précommande au panier en une seule action.
+      </small>
+      <br>
+      <button data-i18n="helloasso.import" onclick="importHelloasso()" class="btn-save">Importer</button>
+      <button data-i18n="helloasso.template" onclick="downloadHelloassoTemplate()" class="btn-save" style="background:transparent;color:var(--text);border:1px solid var(--border)">Modèle CSV</button>
+      <button data-i18n="helloasso.clear" onclick="confirmClearHelloasso()" class="btn-reset" style="margin-left:8px">Vider</button>
     </section>
 
     <!-- Reset -->
@@ -309,22 +318,22 @@
 
   <!-- QR scanner -->
   <div id="modal-scanner" class="modal modal-wide" style="display:none">
-    <h2 style="margin:0 0 10px;font-size:1.1rem">Scanner un billet</h2>
+    <h2 data-i18n="helloasso.scanner_title" style="margin:0 0 10px;font-size:1.1rem">Scanner un billet</h2>
     <div id="scanner-stage">
       <video id="scanner-video" playsinline muted autoplay
              style="width:100%;border-radius:8px;background:#000;max-height:50vh"></video>
-      <p id="scanner-status" style="color:#888;font-size:.85rem;margin-top:6px">
+      <p id="scanner-status" data-i18n="helloasso.scanner_point" style="color:#888;font-size:.85rem;margin-top:6px">
         Pointez la caméra sur le QR code.
       </p>
     </div>
     <div id="scanner-manual" style="display:none;margin-top:10px">
-      <p style="color:#888;font-size:.85rem">Caméra indisponible. Saisissez le code manuellement :</p>
+      <p data-i18n="helloasso.scanner_manual" style="color:#888;font-size:.85rem">Caméra indisponible. Saisissez le code manuellement :</p>
       <input type="text" id="scanner-manual-input" class="input-field" style="width:100%;margin-top:6px"
              placeholder="187858951:639158372579863733">
-      <button onclick="submitManualScan()" class="btn-save" style="margin-top:8px">Valider</button>
+      <button data-i18n="helloasso.manual_submit" onclick="submitManualScan()" class="btn-save" style="margin-top:8px">Valider</button>
     </div>
     <div class="modal-actions" style="margin-top:12px">
-      <button onclick="closeScanner()" class="btn-secondary">Annuler</button>
+      <button data-i18n="modal.cancel" onclick="closeScanner()" class="btn-secondary">Annuler</button>
     </div>
   </div>
 
@@ -332,17 +341,25 @@
   <div id="modal-ticket" class="modal" style="display:none">
     <h2 style="margin:0 0 10px;font-size:1.1rem" id="modal-ticket-title">Billet</h2>
     <div id="modal-ticket-body" style="font-size:.95rem"></div>
+    <!-- Group-scan toggle: shown only when the ticket has a precommande and
+         helloasso_group_scan_enabled is on in settings. Wired in JS. -->
+    <label id="modal-ticket-group-row" class="checkbox-label" style="display:none;margin-top:12px;padding:10px;background:rgba(241,196,15,.1);border:1px solid var(--yellow);border-radius:6px">
+      <input type="checkbox" id="modal-ticket-group-toggle">
+      <span><strong data-i18n="helloasso.add_whole_order">Ajouter toute la commande</strong>
+        <small id="modal-ticket-group-summary" style="display:block;color:#888;margin-top:2px"></small>
+      </span>
+    </label>
     <div class="modal-actions" style="margin-top:12px">
-      <button id="modal-ticket-confirm" class="btn-validate" style="padding:10px 18px">Utiliser</button>
-      <button onclick="closeModal()" class="btn-secondary">Annuler</button>
+      <button id="modal-ticket-confirm" data-i18n="helloasso.use" class="btn-validate" style="padding:10px 18px">Utiliser</button>
+      <button data-i18n="modal.cancel" onclick="closeModal()" class="btn-secondary">Annuler</button>
     </div>
   </div>
 
   <div id="modal-clear-helloasso" class="modal" style="display:none">
-    <p>Supprimer tous les billets Hello Asso importés ?</p>
+    <p data-i18n="helloasso.clear_confirm">Supprimer tous les billets Hello Asso importés ?</p>
     <div class="modal-actions">
-      <button onclick="clearHelloasso()" class="btn-danger">Supprimer</button>
-      <button onclick="closeModal()" class="btn-secondary">Annuler</button>
+      <button data-i18n="helloasso.delete" onclick="clearHelloasso()" class="btn-danger">Supprimer</button>
+      <button data-i18n="modal.cancel" onclick="closeModal()" class="btn-secondary">Annuler</button>
     </div>
   </div>
 
