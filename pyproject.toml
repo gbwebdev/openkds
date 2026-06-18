@@ -24,4 +24,4 @@ where = ["."]
 include = ["openkds*"]
 
 [tool.setuptools.package-data]
-openkds = ["frontend/*", "defaults/*", "default_templates/*"]
+openkds = ["frontend/*", "defaults/*", "default_templates/*", "locales/*"]

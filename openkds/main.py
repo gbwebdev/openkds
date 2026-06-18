@@ -383,6 +383,28 @@ async def update_grill(request: Request):
     return state
 
 
+# ── i18n ─────────────────────────────────────────────────────────────────────
+
+_AVAILABLE_LANGS = ("fr", "en")
+
+
+def _load_locale(lang: str) -> dict:
+    from importlib import resources
+    if lang not in _AVAILABLE_LANGS:
+        lang = "fr"
+    pkg = resources.files("openkds.locales").joinpath(f"{lang}.json")
+    return json.loads(pkg.read_text(encoding="utf-8"))
+
+
+@app.get("/api/i18n")
+async def api_i18n(lang: str | None = None):
+    """Return the requested language dict (or the one configured by the user)."""
+    chosen = lang or load_config().get("ui_lang", "fr")
+    if chosen not in _AVAILABLE_LANGS:
+        chosen = "fr"
+    return {"lang": chosen, "available": list(_AVAILABLE_LANGS), "strings": _load_locale(chosen)}
+
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 @app.get("/api/config")

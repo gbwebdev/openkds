@@ -8,5 +8,6 @@
   "org_name": "",
   "event_name": "",
   "auto_delivery_enabled": false,
-  "auto_delivery_minutes": 20
+  "auto_delivery_minutes": 20,
+  "ui_lang": "fr"
 }
