@@ -29,6 +29,7 @@
     <a href="/orders" class="nav-btn" data-link>
       <span data-i18n="nav.commandes">Commandes</span> <span id="cmd-nav-badge" class="nav-badge" style="display:none">0</span>
     </a>
+    <a href="/precommandes" id="nav-precommandes" class="nav-btn" data-link data-i18n="nav.precommandes" style="display:none">Précommandes</a>
     <a href="/grill" class="nav-btn" data-link data-i18n="nav.grill">Grillades</a>
     <a href="/stats" class="nav-btn" data-link data-i18n="nav.stats">Stats</a>
     <a href="/settings" class="nav-btn" data-link data-i18n="nav.settings">Paramètres</a>
@@ -141,6 +142,22 @@
     <h1 data-i18n="screen.stats">Statistiques</h1>
   </div>
   <div id="stats-content" class="stats-content">
+    <!-- Populated by JS -->
+  </div>
+</div>
+
+<!-- ══════════════════════════ PRECOMMANDES (/precommandes) ═══════════════════ -->
+<div id="screen-precommandes" class="screen">
+  <div class="screen-header" style="gap:14px;flex-wrap:wrap">
+    <h1 data-i18n="screen.precommandes">Précommandes</h1>
+    <input type="search" id="precommandes-search" class="input-field"
+           style="flex:1;min-width:200px;max-width:400px"
+           data-i18n-placeholder="precommandes.search_placeholder"
+           placeholder="Nom, n° commande, n° billet, email…"
+           oninput="renderPrecommandesList()">
+    <span id="precommandes-counter" style="color:var(--text-muted);font-size:.85rem"></span>
+  </div>
+  <div id="precommandes-list" class="precommandes-list">
     <!-- Populated by JS -->
   </div>
 </div>
