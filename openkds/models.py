@@ -14,6 +14,10 @@ class OrderStatus(str, Enum):
 
 class OrderCreate(BaseModel):
     items: dict[str, int]
+    # One scanned ticket (legacy / single-scan mode)
+    helloasso_qr: Optional[str] = None
+    # All tickets to redeem together (group-scan mode picks N siblings)
+    helloasso_qrs: Optional[list[str]] = None
 
     @model_validator(mode="after")
     def check_not_empty(self):
@@ -50,3 +54,4 @@ class ConfigUpdate(BaseModel):
     auto_delivery_enabled: Optional[bool] = None
     auto_delivery_minutes: Optional[float] = None
     ui_lang: Optional[str] = None
+    helloasso_group_scan_enabled: Optional[bool] = None

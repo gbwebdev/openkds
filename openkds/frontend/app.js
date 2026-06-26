@@ -13,14 +13,31 @@ let countdownTimer = null;
 const DRAFT_KEY = 'openkds_draft_v1';
 const GRILL_COLLAPSED_KEY = 'openkds_grill_collapsed_v1';
 
+// ── Hello Asso QR scan state ─────────────────────────────────────────────────
+// scannedQrs may hold ONE QR (single-ticket scan) or N QRs (group-scan: the
+// operator ticked "Ajouter toute la commande" in the modal). When tickets
+// are added via the /precommandes page, the QRs go in here too.
+let scannedQrs = [];
+// When a ticket from a precommande is attached to the current draft, this
+// holds its precommande_id. Used to block mixing tickets from different
+// precommandes in the same order.
+let currentPrecommandeId = null;
+let scannerStream = null;         // MediaStream from getUserMedia
+let scannerDetector = null;       // BarcodeDetector instance
+let scannerTimer = null;          // setTimeout id for the scan loop
+let helloassoEnabled = false;     // toggled by the summary refresh
+let precommandesData = [];        // raw list from /api/helloasso/precommandes
+let expandedPrecommandes = new Set();
+
 // ── Router ────────────────────────────────────────────────────────────────────
 // Each known path maps to a screen ID. Unknown paths fall back to cashier.
 const ROUTES = {
-  '/':         'cashier',
-  '/orders':   'orders',
-  '/stats':    'stats',
-  '/settings': 'settings',
-  '/grill':    'grill',
+  '/':              'cashier',
+  '/orders':        'orders',
+  '/stats':         'stats',
+  '/settings':      'settings',
+  '/grill':         'grill',
+  '/precommandes':  'precommandes',
 };
 
 function navigate(path, replace = false) {
@@ -45,10 +62,11 @@ function renderRoute(path) {
   });
 
   // Per-screen load hooks
-  if (screenName === 'stats')    loadStats();
-  if (screenName === 'settings') loadSettings();
-  if (screenName === 'grill')    renderGrillFull();
-  if (screenName === 'orders')   refreshCommandesScreen();
+  if (screenName === 'stats')         loadStats();
+  if (screenName === 'settings')      loadSettings();
+  if (screenName === 'grill')         renderGrillFull();
+  if (screenName === 'orders')        refreshCommandesScreen();
+  if (screenName === 'precommandes')  loadPrecommandes();
 }
 
 function setupLinkInterceptor() {
@@ -152,6 +170,7 @@ async function init() {
   loadGrillState();
   loadOrders();
   refreshDraftBanner();
+  refreshHelloassoSummary();
 
   // Initial render: derive screen from URL, or force orders in delivery mode.
   if (document.body.classList.contains('mode-delivery')) {
@@ -248,6 +267,7 @@ async function submitOrder() {
 
   const body = { items: {} };
   menuItems.forEach(i => { body.items[i.id] = currentOrder[i.id] || 0; });
+  if (scannedQrs.length > 0) body.helloasso_qrs = scannedQrs.slice();
 
   try {
     const res = await fetch('/api/orders', {
@@ -268,6 +288,7 @@ async function submitOrder() {
       showToast(t('order.error_prefix', { detail: data.detail || '?' }), 'err');
     }
     currentOrder = {};
+    clearScannedTicket();
     updateOrderUI();
   } catch {
     showToast(t('common.network_error'), 'err');
@@ -283,6 +304,7 @@ function confirmCancel() {
 
 function cancelOrder() {
   currentOrder = {};
+  clearScannedTicket();
   updateOrderUI();
   closeModal();
 }
@@ -747,6 +769,7 @@ async function loadStats() {
 
 // ── Settings ───────────────────────────────────────────────────────────────────
 async function loadSettings() {
+  refreshHelloassoSummary();
   try {
     const [cfgRes, statsRes, printersRes] = await Promise.all([
       fetch('/api/config'),
@@ -793,6 +816,7 @@ async function loadSettings() {
     document.getElementById('input-next-order').value = config.next_order_number;
     document.getElementById('input-auto-delivery-enabled').checked = !!config.auto_delivery_enabled;
     document.getElementById('input-auto-delivery-minutes').value = config.auto_delivery_minutes ?? 20;
+    document.getElementById('input-helloasso-group-scan').checked = !!config.helloasso_group_scan_enabled;
 
     const pickersDiv = document.getElementById('color-pickers');
     pickersDiv.innerHTML = menuItems.map(item =>
@@ -958,6 +982,502 @@ function showToast(msg, type = 'ok', duration = 3500) {
   if (_toastTimer) clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => { el.style.display = 'none'; }, duration);
 }
+
+// ── Hello Asso pre-paid tickets ───────────────────────────────────────────────
+async function refreshHelloassoSummary() {
+  try {
+    const res = await fetch('/api/helloasso/summary');
+    if (!res.ok) return;
+    const s = await res.json();
+    helloassoEnabled = (s.total || 0) > 0;
+    // Surface or hide the scan bar on the cashier screen accordingly.
+    const bar = document.getElementById('scan-bar');
+    if (bar) bar.style.display = helloassoEnabled ? 'flex' : 'none';
+    // Same logic for the Precommandes nav entry — only worth showing once
+    // the operator has actually imported tickets.
+    const navPc = document.getElementById('nav-precommandes');
+    if (navPc) navPc.style.display = helloassoEnabled ? 'inline-flex' : 'none';
+    const summary = document.getElementById('helloasso-summary');
+    if (summary) {
+      summary.textContent = helloassoEnabled
+        ? t('helloasso.summary', {
+            remaining: s.remaining, total: s.total, redeemed: s.redeemed,
+          })
+        : t('helloasso.no_tickets');
+    }
+  } catch {}
+}
+
+function downloadHelloassoTemplate() {
+  const ids = menuItems.map(i => i.id);
+  const header = ['qr_code', 'customer_name', 'precommande_id', ...ids].join(',');
+  const example = [
+    '"187858951:639158372579863733"', '"Alice Dupont"', '"HA-12345"',
+    ...ids.map(() => '0'),
+  ].join(',');
+  const blob = new Blob([header + '\n' + example + '\n'], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'helloasso_template.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function importHelloasso() {
+  const fileEl = document.getElementById('input-helloasso-csv');
+  const replace = document.getElementById('input-helloasso-replace').checked;
+  const groupScan = document.getElementById('input-helloasso-group-scan').checked;
+  if (!fileEl.files || fileEl.files.length === 0) {
+    showToast(t('helloasso.pick_file'), 'err'); return;
+  }
+  // Persist the toggle alongside the import — saves the operator a click.
+  await saveConfigFields({ helloasso_group_scan_enabled: groupScan });
+  const fd = new FormData();
+  fd.append('file', fileEl.files[0]);
+  try {
+    const res = await fetch('/api/helloasso/import', {
+      method: 'POST',
+      headers: { 'X-Replace': replace ? 'yes' : 'no' },
+      body: fd,
+    });
+    if (!res.ok) { showToast(t('helloasso.import_error'), 'err'); return; }
+    const r = await res.json();
+    showToast(t('helloasso.imported', { count: r.imported }), 'ok');
+    fileEl.value = '';
+    refreshHelloassoSummary();
+  } catch {
+    showToast(t('common.network_error'), 'err');
+  }
+}
+
+function confirmClearHelloasso() { showModal('clear-helloasso'); }
+
+async function clearHelloasso() {
+  closeModal();
+  try {
+    const res = await fetch('/api/helloasso/tickets', {
+      method: 'DELETE',
+      headers: { 'X-Confirm-Reset': 'yes' },
+    });
+    if (res.ok) {
+      showToast(t('helloasso.cleared'), 'ok');
+      refreshHelloassoSummary();
+    } else {
+      showToast(t('helloasso.import_error'), 'err');
+    }
+  } catch { showToast(t('common.network_error'), 'err'); }
+}
+
+// ── QR scanner — uses the native BarcodeDetector when available ──────────────
+async function openScanner() {
+  showModal('scanner');
+  document.getElementById('scanner-stage').style.display = 'block';
+  document.getElementById('scanner-manual').style.display = 'none';
+  document.getElementById('scanner-status').textContent = t('helloasso.scanner_starting');
+
+  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
+    showScannerManualFallback('API caméra/BarcodeDetector indisponible.');
+    return;
+  }
+
+  try {
+    const formats = await window.BarcodeDetector.getSupportedFormats();
+    if (!formats.includes('qr_code')) {
+      showScannerManualFallback('Format QR non supporté par ce navigateur.');
+      return;
+    }
+    scannerDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    scannerStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' },
+    });
+    const video = document.getElementById('scanner-video');
+    video.srcObject = scannerStream;
+    await video.play();
+    document.getElementById('scanner-status').textContent = t('helloasso.scanner_point');
+    scanLoop(video);
+  } catch (e) {
+    showScannerManualFallback('Accès caméra refusé : ' + (e?.message || ''));
+  }
+}
+
+function showScannerManualFallback(reason) {
+  document.getElementById('scanner-stage').style.display = 'none';
+  document.getElementById('scanner-manual').style.display = 'block';
+  const input = document.getElementById('scanner-manual-input');
+  if (input) input.value = '';
+  console.warn('Scanner fallback:', reason);
+}
+
+async function scanLoop(video) {
+  if (!scannerStream) return;
+  try {
+    const codes = await scannerDetector.detect(video);
+    if (codes && codes.length > 0) {
+      const raw = codes[0].rawValue;
+      closeScanner();
+      handleScannedCode(raw);
+      return;
+    }
+  } catch {}
+  scannerTimer = setTimeout(() => scanLoop(video), 250);
+}
+
+function submitManualScan() {
+  const v = document.getElementById('scanner-manual-input').value.trim();
+  if (!v) return;
+  closeScanner();
+  handleScannedCode(v);
+}
+
+function closeScanner() {
+  if (scannerTimer) { clearTimeout(scannerTimer); scannerTimer = null; }
+  if (scannerStream) {
+    scannerStream.getTracks().forEach(t => t.stop());
+    scannerStream = null;
+  }
+  const video = document.getElementById('scanner-video');
+  if (video) video.srcObject = null;
+  scannerDetector = null;
+  closeModal();
+}
+
+// ── Ticket lookup ────────────────────────────────────────────────────────────
+async function handleScannedCode(qr) {
+  const code = (qr || '').trim();
+  if (!code) return;
+  const groupEnabled = !!config.helloasso_group_scan_enabled;
+  const url = groupEnabled
+    ? `/api/helloasso/precommande/${encodeURIComponent(code)}`
+    : `/api/helloasso/ticket/${encodeURIComponent(code)}`;
+  try {
+    const res = await fetch(url);
+    if (res.status === 404) { showToast(t('helloasso.unknown'), 'err'); return; }
+    if (!res.ok) { showToast(t('helloasso.check_error'), 'err'); return; }
+    const data = await res.json();
+    if (groupEnabled) {
+      // {precommande_id, seed, tickets, aggregated_items}
+      showTicketModal(data.seed, data);
+    } else {
+      showTicketModal(data, null);
+    }
+  } catch {
+    showToast(t('common.network_error'), 'err');
+  }
+}
+
+function showTicketModal(ticket, group) {
+  const labelById = Object.fromEntries(menuItems.map(i => [i.id, i.label.replace('\n', ' ')]));
+  const renderList = (items) => Object.entries(items || {})
+    .filter(([, q]) => q > 0)
+    .map(([id, q]) => `<li><strong>${q}×</strong> ${labelById[id] || id}</li>`)
+    .join('');
+  const lines = renderList(ticket.items);
+  const body = document.getElementById('modal-ticket-body');
+  const title = document.getElementById('modal-ticket-title');
+  title.textContent = ticket.customer_name
+    ? t('helloasso.modal_title_customer', { name: ticket.customer_name })
+    : t('helloasso.modal_title');
+
+  const groupRow = document.getElementById('modal-ticket-group-row');
+  const groupToggle = document.getElementById('modal-ticket-group-toggle');
+  const groupSummary = document.getElementById('modal-ticket-group-summary');
+
+  // Hide the group toggle by default; turn it on below only if the conditions are met.
+  groupRow.style.display = 'none';
+  groupToggle.checked = false;
+
+  const hasGroup = group && group.precommande_id
+    && group.tickets && group.tickets.length > 1;
+
+  if (ticket.redeemed_at) {
+    body.innerHTML = `
+      <p style="color:var(--red);font-weight:600">
+        ${t('helloasso.already_used', {
+          date: ticket.redeemed_at.replace('T',' '),
+          order: ticket.order_id ? '#' + ticket.order_id : '—',
+        })}
+      </p>
+      <ul style="margin-top:8px;padding-left:20px">${lines}</ul>`;
+    document.getElementById('modal-ticket-confirm').style.display = 'none';
+  } else if (!lines) {
+    body.innerHTML = `<p style="color:#888">${t('helloasso.no_items')}</p>`;
+    document.getElementById('modal-ticket-confirm').style.display = 'none';
+  } else {
+    body.innerHTML = `<p>${t('helloasso.prepaid_content')}</p>
+      <ul style="margin-top:8px;padding-left:20px">${lines}</ul>`;
+    const confirm = document.getElementById('modal-ticket-confirm');
+    confirm.style.display = '';
+    if (hasGroup) {
+      groupRow.style.display = 'flex';
+      const groupCount = group.tickets.length;
+      const groupItems = Object.values(group.aggregated_items || {})
+        .reduce((s, v) => s + v, 0);
+      groupSummary.textContent = t('helloasso.group_summary', {
+        count: groupCount, items: groupItems,
+      });
+    }
+    confirm.onclick = () => {
+      const useGroup = hasGroup && groupToggle.checked;
+      if (useGroup) {
+        applyGroupToOrder(group);
+      } else {
+        applyTicketToOrder(ticket);
+      }
+      closeModal();
+    };
+  }
+  showModal('ticket');
+}
+
+function applyTicketToOrder(ticket) {
+  for (const [id, q] of Object.entries(ticket.items || {})) {
+    if (q > 0) currentOrder[id] = (currentOrder[id] || 0) + q;
+  }
+  scannedQrs.push(ticket.qr_code);
+  updateOrderUI();
+  refreshScannedTicketUI();
+  const added = Object.values(ticket.items || {}).reduce((s, v) => s + v, 0);
+  showToast(t('helloasso.ticket_attached', { count: added }), 'ok');
+}
+
+function applyGroupToOrder(group) {
+  // Add ALL items from the precommande to the cart in one go. The operator
+  // already accepted "tout ou rien" via the modal toggle — once committed,
+  // every QR in the group will be redeemed when VALIDER is clicked.
+  for (const [id, q] of Object.entries(group.aggregated_items || {})) {
+    if (q > 0) currentOrder[id] = (currentOrder[id] || 0) + q;
+  }
+  for (const ticket of group.tickets || []) {
+    if (!scannedQrs.includes(ticket.qr_code)) scannedQrs.push(ticket.qr_code);
+  }
+  updateOrderUI();
+  refreshScannedTicketUI();
+  const added = Object.values(group.aggregated_items || {}).reduce((s, v) => s + v, 0);
+  showToast(t('helloasso.group_attached', { count: added }), 'ok');
+}
+
+function refreshScannedTicketUI() {
+  const active = document.getElementById('scan-active');
+  const label = document.getElementById('scan-active-label');
+  if (active) active.style.display = scannedQrs.length > 0 ? 'flex' : 'none';
+  if (label) {
+    label.textContent = scannedQrs.length > 1
+      ? t('helloasso.scanned_n', { count: scannedQrs.length })
+      : t('helloasso.scanned');
+  }
+}
+
+function clearScannedTicket() {
+  scannedQrs = [];
+  currentPrecommandeId = null;
+  refreshScannedTicketUI();
+}
+
+// ── Precommandes page ─────────────────────────────────────────────────────────
+async function loadPrecommandes() {
+  const list = document.getElementById('precommandes-list');
+  if (!list) return;
+  list.innerHTML = `<p class="empty-msg">${t('common.loading')}</p>`;
+  try {
+    const res = await fetch('/api/helloasso/precommandes');
+    precommandesData = res.ok ? await res.json() : [];
+  } catch {
+    precommandesData = [];
+  }
+  renderPrecommandesList();
+}
+
+function renderPrecommandesList() {
+  const list = document.getElementById('precommandes-list');
+  const counter = document.getElementById('precommandes-counter');
+  if (!list) return;
+  const searchEl = document.getElementById('precommandes-search');
+  const q = (searchEl?.value || '').trim().toLowerCase();
+
+  const matches = (g) => {
+    if (!q) return true;
+    if ((g.precommande_id || '').toLowerCase().includes(q)) return true;
+    if ((g.customer_name || '').toLowerCase().includes(q)) return true;
+    if ((g.payer_email || '').toLowerCase().includes(q)) return true;
+    for (const t of g.tickets || []) {
+      if ((t.participant_name || '').toLowerCase().includes(q)) return true;
+      if ((t.ticket_number || '').toLowerCase().includes(q)) return true;
+    }
+    return false;
+  };
+  const filtered = precommandesData.filter(matches);
+
+  if (counter) {
+    counter.textContent = t('precommandes.counter', {
+      shown: filtered.length, total: precommandesData.length,
+    });
+  }
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<p class="empty-msg">${t('precommandes.empty')}</p>`;
+    return;
+  }
+
+  const labelById = Object.fromEntries(menuItems.map(i => [i.id, i.label.replace('\n', ' ')]));
+  list.innerHTML = filtered.map(g => renderPrecommandeCard(g, labelById)).join('');
+}
+
+function renderPrecommandeCard(g, labelById) {
+  const expanded = expandedPrecommandes.has(g.precommande_id || '');
+  const cardClass = [
+    'pc-card',
+    g.fully_redeemed ? 'fully-redeemed' : (g.any_redeemed ? 'partly-redeemed' : 'fresh'),
+    expanded ? 'expanded' : '',
+  ].join(' ').trim();
+
+  // Status badge logic — only show when any redemption has happened.
+  let statusBadge = '';
+  if (g.fully_redeemed) {
+    statusBadge = `<span class="pc-status full">${t('precommandes.fully_used')}</span>`;
+  } else if (g.any_redeemed) {
+    statusBadge = `<span class="pc-status partial">${t('precommandes.partial_used', {
+      used: g.redeemed_count, total: g.total_tickets,
+    })}</span>`;
+  }
+
+  // Level-1 "Add the whole order" button — disabled if any redeemed.
+  const canAddAll = !g.any_redeemed && g.total_tickets > 0;
+  const addAllBtn = `<button class="pc-add-all"
+    onclick="event.stopPropagation(); addPrecommandeToCart('${escapeJs(g.precommande_id || '')}')"
+    ${canAddAll ? '' : 'disabled'}>${t('precommandes.add_all')}</button>`;
+
+  const dateStr = g.date || '';
+  const displayId = (g.precommande_id && !g.precommande_id.startsWith('cash-'))
+    ? `#${g.precommande_id}`
+    : t('precommandes.cash');
+
+  const ticketsHtml = (g.tickets || []).map(tk =>
+    renderPrecommandeTicket(tk, g.precommande_id, labelById)
+  ).join('');
+
+  return `<div class="${cardClass}" id="pc-${escapeAttr(g.precommande_id || '')}">
+    <div class="pc-head" onclick="togglePrecommande('${escapeJs(g.precommande_id || '')}')">
+      <span class="chevron">▶</span>
+      <div class="pc-title">
+        <span class="pc-id">${displayId}</span>
+        <span class="pc-name">${escapeHtml(g.customer_name || '—')}</span>
+        <span class="pc-meta">${escapeHtml(dateStr)} · ${g.total_tickets} ${
+          g.total_tickets > 1 ? t('precommandes.tickets_plural') : t('precommandes.tickets_singular')
+        }</span>
+      </div>
+      ${statusBadge}
+      ${addAllBtn}
+    </div>
+    <div class="pc-tickets">${ticketsHtml}</div>
+  </div>`;
+}
+
+function renderPrecommandeTicket(tk, precommandeId, labelById) {
+  const tarif = tk.tarif || (Object.entries(tk.items || {})
+    .map(([id, q]) => `${q}× ${labelById[id] || id}`).join(', '));
+  const meta = [tk.ticket_number ? `#${tk.ticket_number}` : t('precommandes.cash_ticket')]
+    .filter(Boolean).join(' · ');
+
+  let action;
+  if (tk.redeemed_at) {
+    const orderRef = tk.order_number
+      ? `<a href="/orders" data-link>#${String(tk.order_number).padStart(3, '0')}</a>`
+      : '—';
+    action = `<span class="pc-ticket-used">${t('precommandes.used_in', { order: orderRef })}</span>`;
+  } else {
+    action = `<button class="pc-ticket-action"
+      onclick="addTicketToCart('${escapeJs(tk.qr_code)}', '${escapeJs(precommandeId || '')}')">${
+        t('precommandes.add_ticket')
+      }</button>`;
+  }
+
+  return `<div class="pc-ticket">
+    <div class="pc-ticket-info">
+      <span class="pc-ticket-participant">${escapeHtml(tk.participant_name || '—')}</span>
+      <span class="pc-ticket-tarif">${escapeHtml(tarif || '—')}</span>
+      <span class="pc-ticket-meta">${escapeHtml(meta)}</span>
+    </div>
+    ${action}
+  </div>`;
+}
+
+function togglePrecommande(id) {
+  if (expandedPrecommandes.has(id)) expandedPrecommandes.delete(id);
+  else expandedPrecommandes.add(id);
+  renderPrecommandesList();
+}
+
+function addPrecommandeToCart(precommandeId) {
+  // Find the precommande in our cached list.
+  const g = precommandesData.find(x => (x.precommande_id || '') === precommandeId);
+  if (!g) { showToast(t('precommandes.lookup_error'), 'err'); return; }
+  if (g.any_redeemed) {
+    showToast(t('precommandes.cant_add_partial'), 'err');
+    return;
+  }
+  if (currentPrecommandeId && currentPrecommandeId !== precommandeId) {
+    showToast(t('precommandes.mixing_blocked'), 'err', 5000);
+    return;
+  }
+
+  // Add every ticket's items + QRs.
+  let totalAdded = 0;
+  for (const tk of g.tickets) {
+    for (const [id, q] of Object.entries(tk.items || {})) {
+      if (q > 0) {
+        currentOrder[id] = (currentOrder[id] || 0) + q;
+        totalAdded += q;
+      }
+    }
+    if (!scannedQrs.includes(tk.qr_code)) scannedQrs.push(tk.qr_code);
+  }
+  currentPrecommandeId = precommandeId;
+  updateOrderUI();
+  refreshScannedTicketUI();
+  showToast(t('precommandes.added', { count: totalAdded }), 'ok');
+  navigate('/');
+}
+
+function addTicketToCart(qr, precommandeId) {
+  if (currentPrecommandeId && precommandeId && currentPrecommandeId !== precommandeId) {
+    showToast(t('precommandes.mixing_blocked'), 'err', 5000);
+    return;
+  }
+  const g = precommandesData.find(x => (x.precommande_id || '') === precommandeId);
+  if (!g) { showToast(t('precommandes.lookup_error'), 'err'); return; }
+  const tk = (g.tickets || []).find(x => x.qr_code === qr);
+  if (!tk) { showToast(t('precommandes.lookup_error'), 'err'); return; }
+  if (tk.redeemed_at) {
+    showToast(t('precommandes.already_used'), 'err');
+    return;
+  }
+
+  let added = 0;
+  for (const [id, q] of Object.entries(tk.items || {})) {
+    if (q > 0) {
+      currentOrder[id] = (currentOrder[id] || 0) + q;
+      added += q;
+    }
+  }
+  if (!scannedQrs.includes(qr)) scannedQrs.push(qr);
+  if (precommandeId) currentPrecommandeId = precommandeId;
+  updateOrderUI();
+  refreshScannedTicketUI();
+  showToast(t('precommandes.ticket_added', { count: added }), 'ok');
+  navigate('/');
+}
+
+// ── HTML escape helpers ──────────────────────────────────────────────────────
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s).replace(/\s/g, '_'); }
+function escapeJs(s) { return String(s ?? '').replace(/['\\]/g, (c) => '\\' + c); }
 
 // ── Boot ───────────────────────────────────────────────────────────────────────
 init();

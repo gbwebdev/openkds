@@ -37,6 +37,21 @@ def init_db():
 
             INSERT OR IGNORE INTO grill_stock (id, stock, updated_at)
             VALUES (1, '{}', datetime('now'));
+
+            CREATE TABLE IF NOT EXISTS helloasso_tickets (
+                qr_code          TEXT PRIMARY KEY,
+                customer_name    TEXT,             -- payer "Nom Prénom"
+                items            TEXT NOT NULL,    -- JSON {item_id: qty}
+                imported_at      TEXT NOT NULL,
+                redeemed_at      TEXT,
+                order_id         INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+                precommande_id   TEXT,
+                participant_name TEXT,             -- who's eating (CSV: Nom + Prénom participant)
+                ticket_number    TEXT,             -- CSV: Numéro de billet (= QR before ':')
+                tarif            TEXT,             -- CSV: human-readable Tarif label
+                order_date       TEXT,             -- CSV: Date de la commande
+                payer_email      TEXT
+            );
         """)
         # Step 2 — add columns missing from pre-existing tables. Must happen
         # BEFORE creating indexes that reference those columns.
@@ -45,8 +60,18 @@ def init_db():
         _ensure_column(conn, "orders", "delivered_at", "TEXT")
         _ensure_column(conn, "orders", "delivery_delay_seconds",
                        "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "helloasso_tickets", "precommande_id", "TEXT")
+        _ensure_column(conn, "helloasso_tickets", "participant_name", "TEXT")
+        _ensure_column(conn, "helloasso_tickets", "ticket_number", "TEXT")
+        _ensure_column(conn, "helloasso_tickets", "tarif", "TEXT")
+        _ensure_column(conn, "helloasso_tickets", "order_date", "TEXT")
+        _ensure_column(conn, "helloasso_tickets", "payer_email", "TEXT")
         # Step 3 — create indexes once we know the columns exist.
         conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_helloasso_precommande "
+            "ON helloasso_tickets(precommande_id)"
+        )
 
 
 def _ensure_column(conn, table: str, name: str, definition: str) -> None:
@@ -142,6 +167,11 @@ def delete_all_orders():
         conn.execute(
             "UPDATE grill_stock SET stock='{}', updated_at=datetime('now') WHERE id=1"
         )
+        # Tickets stay imported — operators don't want to re-upload a CSV after
+        # every reset — but their redemption is cleared so they're reusable.
+        conn.execute(
+            "UPDATE helloasso_tickets SET redeemed_at = NULL, order_id = NULL"
+        )
 
 
 def get_orders_since(cutoff_iso: str, status: str | None = None) -> list[dict]:
@@ -170,6 +200,223 @@ def update_grill_stock(updates: dict) -> dict:
             (json.dumps(stock), _now()),
         )
     return stock
+
+
+# ── Hello Asso tickets ────────────────────────────────────────────────────────
+
+def _row_to_ticket(row) -> dict:
+    d = dict(row)
+    if isinstance(d.get("items"), str):
+        d["items"] = json.loads(d["items"])
+    return d
+
+
+def import_helloasso_tickets(rows: list[dict], replace: bool) -> dict:
+    """Bulk-insert tickets. Each row dict must have qr_code, items (dict).
+    Optional keys: customer_name, precommande_id, participant_name,
+    ticket_number, tarif, order_date, payer_email.
+
+    `replace=True` clears the table first (typical for a fresh CSV upload).
+    Returns counters: {imported, skipped_duplicate, total_in_db}.
+    """
+    imported = 0
+    skipped = 0
+    now = _now()
+    with get_connection() as conn:
+        if replace:
+            conn.execute("DELETE FROM helloasso_tickets")
+        for r in rows:
+            qr = r.get("qr_code")
+            items = r.get("items") or {}
+            if not qr or not isinstance(items, dict):
+                continue
+            try:
+                conn.execute(
+                    "INSERT INTO helloasso_tickets "
+                    "(qr_code, customer_name, items, imported_at, precommande_id, "
+                    "participant_name, ticket_number, tarif, order_date, payer_email) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (qr, r.get("customer_name"), json.dumps(items), now,
+                     r.get("precommande_id") or None,
+                     r.get("participant_name") or None,
+                     r.get("ticket_number") or None,
+                     r.get("tarif") or None,
+                     r.get("order_date") or None,
+                     r.get("payer_email") or None),
+                )
+                imported += 1
+            except sqlite3.IntegrityError:
+                skipped += 1
+        total = conn.execute("SELECT COUNT(*) FROM helloasso_tickets").fetchone()[0]
+    return {"imported": imported, "skipped_duplicate": skipped, "total_in_db": total}
+
+
+def _canonical_qr(raw: str) -> str:
+    """Strip the Hello Asso event suffix to get the ticket-number prefix.
+
+    Hello Asso QRs are formatted "<ticket_number>:<event_id>" but the CSV
+    export only carries the ticket number. The lookup tries the raw value
+    first (so users storing the full QR in their canonical-CSV still work)
+    and falls back to the prefix for Hello Asso-shaped imports.
+    """
+    return raw.split(":", 1)[0] if ":" in raw else raw
+
+
+def get_helloasso_ticket(qr_code: str) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM helloasso_tickets WHERE qr_code = ?", (qr_code,)
+        ).fetchone()
+        if row is None and ":" in qr_code:
+            row = conn.execute(
+                "SELECT * FROM helloasso_tickets WHERE qr_code = ?",
+                (_canonical_qr(qr_code),),
+            ).fetchone()
+    return _row_to_ticket(row) if row else None
+
+
+def get_helloasso_precommande(qr_code: str) -> dict | None:
+    """Return the scanned ticket + all unredeemed siblings sharing its precommande_id.
+
+    None if the QR is unknown. If the ticket has no precommande_id, the returned
+    dict still contains the single ticket — letting the caller treat it as a
+    one-element group with no special handling.
+    """
+    seed = get_helloasso_ticket(qr_code)
+    if seed is None:
+        return None
+    precommande_id = seed.get("precommande_id")
+    if not precommande_id:
+        return {
+            "precommande_id": None,
+            "seed": seed,
+            "tickets": [seed],
+            "aggregated_items": seed.get("items", {}),
+        }
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM helloasso_tickets WHERE precommande_id = ? "
+            "AND (redeemed_at IS NULL OR qr_code = ?) ORDER BY qr_code",
+            (precommande_id, qr_code),
+        ).fetchall()
+    tickets = [_row_to_ticket(r) for r in rows]
+    aggregated: dict[str, int] = {}
+    for t in tickets:
+        for item_id, qty in (t.get("items") or {}).items():
+            aggregated[item_id] = aggregated.get(item_id, 0) + qty
+    return {
+        "precommande_id": precommande_id,
+        "seed": seed,
+        "tickets": tickets,
+        "aggregated_items": aggregated,
+    }
+
+
+def redeem_helloasso_ticket(qr_code: str, order_id: int) -> bool:
+    """Mark a ticket as redeemed against a specific order. Idempotent: returns
+    False if the ticket is unknown or already redeemed. Falls back to the
+    Hello Asso prefix when the raw QR isn't found verbatim."""
+    canon = _canonical_qr(qr_code)
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE helloasso_tickets SET redeemed_at = ?, order_id = ? "
+            "WHERE qr_code = ? AND redeemed_at IS NULL",
+            (_now(), order_id, qr_code),
+        )
+        if cur.rowcount == 0 and canon != qr_code:
+            cur = conn.execute(
+                "UPDATE helloasso_tickets SET redeemed_at = ?, order_id = ? "
+                "WHERE qr_code = ? AND redeemed_at IS NULL",
+                (_now(), order_id, canon),
+            )
+        return cur.rowcount > 0
+
+
+def list_helloasso_precommandes(search: str | None = None) -> list[dict]:
+    """Return all precommandes as a tree, optionally filtered by a substring
+    matching surname, order number, ticket number or payer email.
+
+    Each precommande aggregates its tickets along with the order number it
+    was redeemed in (joined from the orders table) so the UI can link back
+    to the Commandes screen.
+    """
+    sql = """
+        SELECT ht.*, o.number AS order_number
+        FROM helloasso_tickets ht
+        LEFT JOIN orders o ON o.id = ht.order_id
+        ORDER BY ht.order_date DESC, ht.precommande_id, ht.ticket_number
+    """
+    with get_connection() as conn:
+        rows = [dict(r) for r in conn.execute(sql).fetchall()]
+    for r in rows:
+        if isinstance(r.get("items"), str):
+            r["items"] = json.loads(r["items"])
+
+    # Apply the search filter if any. Case-insensitive substring across the
+    # name/email/order/ticket fields.
+    needle = (search or "").strip().lower()
+    def matches(r: dict) -> bool:
+        if not needle:
+            return True
+        haystack = " ".join(str(r.get(k) or "") for k in (
+            "customer_name", "participant_name", "payer_email",
+            "precommande_id", "ticket_number",
+        )).lower()
+        return needle in haystack
+
+    rows = [r for r in rows if matches(r)]
+
+    # Group by precommande_id (tickets sharing the same Hello Asso order).
+    # Cash-payment rows (no precommande_id) are grouped per row via a synthetic
+    # key so each appears as its own one-line precommande.
+    groups: dict[str, dict] = {}
+    for r in rows:
+        gid = r.get("precommande_id") or f"single:{r['qr_code']}"
+        g = groups.get(gid)
+        if g is None:
+            g = {
+                "precommande_id": r.get("precommande_id"),
+                "date": r.get("order_date"),
+                "customer_name": r.get("customer_name"),
+                "payer_email": r.get("payer_email"),
+                "tickets": [],
+                "redeemed_count": 0,
+            }
+            groups[gid] = g
+        g["tickets"].append({
+            "qr_code": r["qr_code"],
+            "ticket_number": r.get("ticket_number"),
+            "participant_name": r.get("participant_name"),
+            "tarif": r.get("tarif"),
+            "items": r.get("items") or {},
+            "redeemed_at": r.get("redeemed_at"),
+            "order_id": r.get("order_id"),
+            "order_number": r.get("order_number"),
+        })
+        if r.get("redeemed_at"):
+            g["redeemed_count"] += 1
+
+    out = list(groups.values())
+    for g in out:
+        g["total_tickets"] = len(g["tickets"])
+        g["fully_redeemed"] = g["redeemed_count"] == g["total_tickets"]
+        g["any_redeemed"] = g["redeemed_count"] > 0
+    return out
+
+
+def get_helloasso_summary() -> dict:
+    with get_connection() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM helloasso_tickets").fetchone()[0]
+        redeemed = conn.execute(
+            "SELECT COUNT(*) FROM helloasso_tickets WHERE redeemed_at IS NOT NULL"
+        ).fetchone()[0]
+    return {"total": total, "redeemed": redeemed, "remaining": total - redeemed}
+
+
+def clear_helloasso_tickets() -> int:
+    with get_connection() as conn:
+        cur = conn.execute("DELETE FROM helloasso_tickets")
+        return cur.rowcount
 
 
 def get_stats(menu_items: list[dict]) -> dict:
