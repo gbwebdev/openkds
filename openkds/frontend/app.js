@@ -1090,8 +1090,15 @@ async function openScanner() {
       return;
     }
     scannerDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    // Ask for a higher resolution: BarcodeDetector on Android (ML Kit)
+    // reliably finds QR codes at ~720p but often misses them at the default
+    // 480p VGA, especially with Hello Asso's dense payload.
     scannerStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment' },
+      video: {
+        facingMode: 'environment',
+        width:  { ideal: 1280 },
+        height: { ideal: 720 },
+      },
     });
     const video = document.getElementById('scanner-video');
     video.srcObject = scannerStream;
@@ -1114,7 +1121,21 @@ function showScannerManualFallback(reason) {
 async function scanLoop(video) {
   if (!scannerStream) return;
   try {
-    const codes = await scannerDetector.detect(video);
+    // Snapshot the current frame to an ImageBitmap before handing it to
+    // BarcodeDetector. Feeding the live <video> element directly works on
+    // Chrome desktop and Samsung devices, but ML Kit on some Pixels never
+    // returns a hit until it gets a static image source. Falling back to
+    // the video element preserves behaviour where the bitmap path fails.
+    let source = video;
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      try {
+        source = await createImageBitmap(video);
+      } catch {
+        source = video;
+      }
+    }
+    const codes = await scannerDetector.detect(source);
+    if (source !== video && source.close) source.close();
     if (codes && codes.length > 0) {
       const raw = codes[0].rawValue;
       closeScanner();
