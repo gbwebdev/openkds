@@ -1085,6 +1085,10 @@ body.menu-open .nav-burger span:nth-child(3) { top: 19px; transform: rotate(-45d
 }
 
 .pc-card {
+  /* Don't let the parent flex column squish us: `overflow: hidden` (kept for
+     the rounded corners over the colored left border) nulls the min-content
+     size and lets flex-shrink crush each card to a few pixels. */
+  flex-shrink: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
