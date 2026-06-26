@@ -20,6 +20,7 @@ from .database import (
     set_order_status, add_order_delay, delete_all_orders, update_grill_stock, get_stats,
     import_helloasso_tickets, get_helloasso_ticket, redeem_helloasso_ticket,
     get_helloasso_summary, clear_helloasso_tickets, get_helloasso_precommande,
+    list_helloasso_precommandes,
 )
 from .models import (
     OrderCreate, OrderStatusUpdate, OrderDelayUpdate, OrderStatus,
@@ -117,7 +118,7 @@ async def ncsi():
 
 # ── SPA ───────────────────────────────────────────────────────────────────────
 
-_SPA_PATHS = ("/", "/orders", "/stats", "/settings", "/grill")
+_SPA_PATHS = ("/", "/orders", "/stats", "/settings", "/grill", "/precommandes")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -125,6 +126,7 @@ _SPA_PATHS = ("/", "/orders", "/stats", "/settings", "/grill")
 @app.get("/stats", response_class=HTMLResponse)
 @app.get("/settings", response_class=HTMLResponse)
 @app.get("/grill", response_class=HTMLResponse)
+@app.get("/precommandes", response_class=HTMLResponse)
 async def serve_index():
     """SPA entry point — every known route serves the same index.html."""
     return HTMLResponse((FRONTEND_DIR / "index.html").read_text(encoding="utf-8"))
@@ -445,20 +447,29 @@ async def put_config(data: ConfigUpdate):
 # ── Hello Asso pre-paid tickets ───────────────────────────────────────────────
 
 def _parse_helloasso_csv(text: str, valid_item_ids: set[str]) -> list[dict]:
-    """Parse OpenKDS' canonical Hello Asso CSV format.
+    """Parse either OpenKDS' canonical format or the raw Hello Asso export.
 
-    Expected columns:
-      - qr_code (required) — the raw QR payload, stored as opaque key
-      - customer_name (optional)
-      - precommande_id (optional) — groups tickets from the same Hello Asso
-        order so the operator can redeem them in one scan ("group" mode).
-      - one column per menu item ID, the cell value is the integer quantity
-      - any other column is ignored
+    The format is auto-detected from the headers:
+      - canonical: has `qr_code` column, items in per-id columns
+      - Hello Asso: has `Référence commande` column, items via the `menu_id`
+        column the operator added when reshaping the export
 
     Returns a list of dicts ready for import_helloasso_tickets().
     """
     import csv, io
-    reader = csv.DictReader(io.StringIO(text))
+    # Excel exports use ';' separators with cp1252 by default; the canonical
+    # template uses ',' with UTF-8. Sniff the first non-empty line.
+    first_line = next((l for l in text.splitlines() if l.strip()), "")
+    delim = ";" if first_line.count(";") > first_line.count(",") else ","
+    reader = csv.DictReader(io.StringIO(text), delimiter=delim)
+    headers = set(reader.fieldnames or [])
+    if "Référence commande" in headers:
+        return _parse_helloasso_raw(reader, valid_item_ids)
+    return _parse_helloasso_canonical(reader, valid_item_ids)
+
+
+def _parse_helloasso_canonical(reader, valid_item_ids: set[str]) -> list[dict]:
+    """Original OpenKDS format: qr_code + customer_name + per-item columns."""
     rows = []
     for raw in reader:
         qr = (raw.get("qr_code") or "").strip()
@@ -478,6 +489,47 @@ def _parse_helloasso_csv(text: str, valid_item_ids: set[str]) -> list[dict]:
             "qr_code": qr,
             "customer_name": (raw.get("customer_name") or "").strip() or None,
             "precommande_id": (raw.get("precommande_id") or "").strip() or None,
+            "items": items,
+        })
+    return rows
+
+
+def _parse_helloasso_raw(reader, valid_item_ids: set[str]) -> list[dict]:
+    """Hello Asso CSV export. The operator must have added a `menu_id` column
+    mapping each Tarif to a menu item id. Rows whose menu_id is unknown are
+    skipped.
+
+    Cash-payment rows have no `Numéro de billet` and no `Référence commande`;
+    we synthesize both with a `cash-<idx>` key so they appear in the
+    precommande page as one-line precommandes.
+    """
+    rows = []
+    for idx, raw in enumerate(reader, start=1):
+        menu_id = (raw.get("menu_id") or "").strip()
+        if menu_id and menu_id not in valid_item_ids:
+            continue  # silently skip rows mapped to deleted/unknown items
+
+        ticket_number = (raw.get("Numéro de billet") or "").strip()
+        precommande_id = (raw.get("Référence commande") or "").strip()
+        cash = not ticket_number and not precommande_id
+        qr_code = ticket_number or f"cash-{idx}"
+        precommande_id = precommande_id or (f"cash-{idx}" if cash else None)
+
+        items = {menu_id: 1} if menu_id else {}
+        payer_first = (raw.get("Prénom payeur") or "").strip()
+        payer_last = (raw.get("Nom payeur") or "").strip()
+        part_first = (raw.get("Prénom participant") or "").strip()
+        part_last = (raw.get("Nom participant") or "").strip()
+
+        rows.append({
+            "qr_code": qr_code,
+            "customer_name": f"{payer_last} {payer_first}".strip() or None,
+            "precommande_id": precommande_id,
+            "participant_name": f"{part_last} {part_first}".strip() or None,
+            "ticket_number": ticket_number or None,
+            "tarif": (raw.get("Tarif") or "").strip() or None,
+            "order_date": (raw.get("Date de la commande") or "").strip() or None,
+            "payer_email": (raw.get("Email payeur") or "").strip() or None,
             "items": items,
         })
     return rows
@@ -527,6 +579,12 @@ async def helloasso_clear(x_confirm_reset: str = Header(None, alias="X-Confirm-R
         raise HTTPException(status_code=400, detail="Header X-Confirm-Reset: yes required")
     deleted = clear_helloasso_tickets()
     return {"deleted": deleted}
+
+
+@app.get("/api/helloasso/precommandes")
+async def helloasso_list_precommandes(q: str | None = None):
+    """Browseable tree of imported precommandes for the /precommandes page."""
+    return list_helloasso_precommandes(q)
 
 
 # ── Printers ──────────────────────────────────────────────────────────────────

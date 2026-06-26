@@ -171,5 +171,26 @@
   "helloasso.ticket_attached": "Ticket attached — {count} item(s) added",
   "helloasso.group_attached": "Order attached — {count} item(s) added",
   "helloasso.unknown": "Unknown ticket",
-  "helloasso.check_error": "Verification error"
+  "helloasso.check_error": "Verification error",
+
+  "nav.precommandes": "Pre-orders",
+  "screen.precommandes": "Pre-orders",
+  "precommandes.search_placeholder": "Name, order #, ticket #, email…",
+  "precommandes.counter": "{shown} / {total}",
+  "precommandes.empty": "No pre-orders imported. Import a Hello Asso CSV from Settings.",
+  "precommandes.tickets_singular": "ticket",
+  "precommandes.tickets_plural": "tickets",
+  "precommandes.cash": "Cash sale",
+  "precommandes.cash_ticket": "Cash sale",
+  "precommandes.fully_used": "Fully redeemed",
+  "precommandes.partial_used": "Partially redeemed ({used}/{total})",
+  "precommandes.add_all": "Add the whole order to cart",
+  "precommandes.add_ticket": "Add to cart",
+  "precommandes.used_in": "Used in order {order}",
+  "precommandes.added": "{count} item(s) added to cart",
+  "precommandes.ticket_added": "Ticket added — {count} item(s)",
+  "precommandes.cant_add_partial": "This pre-order is partially redeemed. Add the remaining tickets one by one.",
+  "precommandes.mixing_blocked": "Another pre-order is already in the cart. Submit or cancel the current order before starting another.",
+  "precommandes.already_used": "This ticket has already been used.",
+  "precommandes.lookup_error": "Lookup error"
 }

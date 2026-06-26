@@ -171,5 +171,26 @@
   "helloasso.ticket_attached": "Billet attaché — {count} item(s) ajouté(s)",
   "helloasso.group_attached": "Précommande attachée — {count} item(s) ajouté(s)",
   "helloasso.unknown": "Billet inconnu",
-  "helloasso.check_error": "Erreur de vérification"
+  "helloasso.check_error": "Erreur de vérification",
+
+  "nav.precommandes": "Précommandes",
+  "screen.precommandes": "Précommandes",
+  "precommandes.search_placeholder": "Nom, n° commande, n° billet, email…",
+  "precommandes.counter": "{shown} / {total}",
+  "precommandes.empty": "Aucune précommande importée. Importez le CSV Hello Asso depuis Paramètres.",
+  "precommandes.tickets_singular": "billet",
+  "precommandes.tickets_plural": "billets",
+  "precommandes.cash": "Vente directe",
+  "precommandes.cash_ticket": "Vente directe",
+  "precommandes.fully_used": "Entièrement utilisée",
+  "precommandes.partial_used": "Partiellement utilisée ({used}/{total})",
+  "precommandes.add_all": "Ajouter toute la commande au panier",
+  "precommandes.add_ticket": "Ajouter au panier",
+  "precommandes.used_in": "Utilisé dans la commande {order}",
+  "precommandes.added": "{count} item(s) ajouté(s) au panier",
+  "precommandes.ticket_added": "Billet ajouté — {count} item(s)",
+  "precommandes.cant_add_partial": "Cette précommande est partiellement utilisée. Ajoutez les billets restants un par un.",
+  "precommandes.mixing_blocked": "Une autre précommande est déjà dans le panier. Validez ou annulez la commande en cours avant d'en démarrer une autre.",
+  "precommandes.already_used": "Ce billet a déjà été utilisé.",
+  "precommandes.lookup_error": "Erreur de recherche"
 }
