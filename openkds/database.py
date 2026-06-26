@@ -252,14 +252,29 @@ def import_helloasso_tickets(rows: list[dict], replace: bool) -> dict:
 
 
 def _canonical_qr(raw: str) -> str:
-    """Strip the Hello Asso event suffix to get the ticket-number prefix.
+    """Reduce a scanned QR payload to the ticket-number prefix stored in DB.
 
-    Hello Asso QRs are formatted "<ticket_number>:<event_id>" but the CSV
-    export only carries the ticket number. The lookup tries the raw value
-    first (so users storing the full QR in their canonical-CSV still work)
-    and falls back to the prefix for Hello Asso-shaped imports.
+    Hello Asso QR codes carry the **base64 encoding** of "<ticket>:<event>",
+    e.g. `MTg3ODU4OTUzOjYzOTE1ODM3MjU3OTg2MzczMw==` decodes to
+    `187858953:639158372579863733`. The CSV export only holds the ticket
+    number, so to look up a scan we must:
+      1. fall back to the prefix when ':' is already present in the raw
+         value (covers operators who paste a pre-decoded QR by hand), and
+      2. otherwise try a base64 decode and split on ':' to handle the
+         normal camera-scanned payload.
+    Whatever we cannot decode is returned unchanged so the caller can still
+    try a direct exact-match lookup.
     """
-    return raw.split(":", 1)[0] if ":" in raw else raw
+    if not raw:
+        return raw
+    if ":" in raw:
+        return raw.split(":", 1)[0]
+    try:
+        import base64
+        decoded = base64.b64decode(raw, validate=False).decode("ascii")
+    except Exception:
+        return raw
+    return decoded.split(":", 1)[0] if ":" in decoded else decoded
 
 
 def get_helloasso_ticket(qr_code: str) -> dict | None:
@@ -267,11 +282,12 @@ def get_helloasso_ticket(qr_code: str) -> dict | None:
         row = conn.execute(
             "SELECT * FROM helloasso_tickets WHERE qr_code = ?", (qr_code,)
         ).fetchone()
-        if row is None and ":" in qr_code:
-            row = conn.execute(
-                "SELECT * FROM helloasso_tickets WHERE qr_code = ?",
-                (_canonical_qr(qr_code),),
-            ).fetchone()
+        if row is None:
+            canon = _canonical_qr(qr_code)
+            if canon and canon != qr_code:
+                row = conn.execute(
+                    "SELECT * FROM helloasso_tickets WHERE qr_code = ?", (canon,)
+                ).fetchone()
     return _row_to_ticket(row) if row else None
 
 
